@@ -15,7 +15,8 @@ class AgentState(TypedDict):
     status: str
     message: str
     research_questions: list[str]
-    evidence: list[str]
+    evidence: list[dict]
+    search_count: int
 
 
 def validate_idea(state: AgentState) -> dict:
@@ -67,21 +68,39 @@ def plan_research(state: AgentState) -> dict:
     }
 
 
+# Searches the web for the first research question
+# and converts the results into agent-friendly evidence.
+from rag.web_search import search_web, normalize_results
+
+
+# Searches each research question within a strict API budget
+# and combines the results into one evidence collection.
+
+MAX_SEARCHES = 5
+
+
 def retrieve_evidence(state: AgentState) -> dict:
-    """Retrieve relevant product-research evidence for the first question."""
+    """Collect web evidence for the planned research questions."""
 
-    question = state["research_questions"][0]
+    evidence = []
 
-    query_embedding = create_embeddings([question])[0]
+    for question in state["research_questions"]:
+        if state["search_count"] >= MAX_SEARCHES:
+            break
 
-    evidence = retrieve_documents(
-        query_embedding=query_embedding,
-        n_results=3,
-    )
+        result = search_web(question, num_results=5)
+        question_evidence = normalize_results(result)
+
+        for item in question_evidence:
+            item["research_question"] = question
+
+        evidence.extend(question_evidence)
+        state["search_count"] += 1
 
     return {
         "evidence": evidence,
-        "message": "Research plan created and evidence retrieved.",
+        "search_count": state["search_count"],
+        "message": "Web research completed within the search budget.",
     }
 
 
