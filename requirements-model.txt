@@ -1,0 +1,8 @@
+# Optional: only needed for the "model" tests (test_embeddings.py,
+# test_vector_store.py). Those download a Hugging Face model and write a local
+# Chroma store. Not used by the running API.
+
+-r requirements.txt
+
+sentence-transformers==6.1.0
+chromadb==1.5.9

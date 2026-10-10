@@ -141,6 +141,7 @@ def generate_report(state: AgentState) -> dict:
         state["product_idea"],
         state["analysis"],
         state["validation"],
+        evidence=state["evidence"],
     )
 
     return {

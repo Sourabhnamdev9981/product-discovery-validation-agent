@@ -667,6 +667,35 @@ pre {
 
 /* ---------- Document layout (report + docs) ---------- */
 
+.report-note {
+  max-width: 72ch;
+  margin-top: 20px;
+  padding-left: 14px;
+  border-left: 2px solid var(--line-strong);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.cite {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.cite:hover {
+  color: var(--ink);
+}
+
+.cite-missing {
+  font-size: 0.75rem;
+}
+
 .report-actions {
   display: flex;
   align-items: center;

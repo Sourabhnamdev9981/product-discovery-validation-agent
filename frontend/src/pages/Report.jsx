@@ -1,12 +1,28 @@
+// basis describes how much a section can be trusted at face value:
+//   sourced        - model finding with linked web sources
+//   inference      - model conclusion drawn from linked sources
+//   assumption     - unverified hypothesis, not sourced
+//   recommendation - suggested next step, not sourced
 const SECTIONS = [
-  ["key_problems", "Key Problems"],
-  ["target_users", "Target Users"],
-  ["competitor_findings", "Competitor Findings"],
-  ["assumptions", "Assumptions"],
-  ["opportunities", "Opportunities"],
-  ["mvp_features", "MVP Features"],
-  ["validation_experiments", "Validation Experiments"],
+  { key: "key_problems", title: "Key Problems", basis: "sourced" },
+  { key: "target_users", title: "Target Users", basis: "sourced" },
+  { key: "competitor_findings", title: "Competitor Findings", basis: "sourced" },
+  { key: "assumptions", title: "Assumptions", basis: "assumption" },
+  { key: "opportunities", title: "Opportunities", basis: "inference" },
+  { key: "mvp_features", title: "MVP Features", basis: "recommendation" },
+  {
+    key: "validation_experiments",
+    title: "Validation Experiments",
+    basis: "recommendation",
+  },
 ];
+
+const BASIS_LABEL = {
+  sourced: "Linked to web sources",
+  inference: "Inference from linked sources",
+  assumption: "Unverified assumption",
+  recommendation: "Recommendation, not sourced",
+};
 
 function pad(number) {
   return String(number).padStart(2, "0");
@@ -14,6 +30,54 @@ function pad(number) {
 
 function scrollToSection(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+}
+
+// Only http(s) links are rendered as anchors; anything else is shown as text.
+function safeHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+// Responses from older backends have no cited_findings; fall back to the
+// plain string lists so the report still renders.
+function buildSections(report) {
+  const cited = report.cited_findings || {};
+
+  return SECTIONS.map(({ key, title, basis }) => {
+    const items = cited[key]
+      ? cited[key].map((c) => ({
+          statement: c.statement,
+          sourceIds: c.source_ids || [],
+        }))
+      : (report[key] || []).map((statement) => ({
+          statement,
+          sourceIds: [],
+        }));
+
+    return { key, title, basis, items };
+  });
+}
+
+// Buttons, not anchors: the app uses hash routing, so "#source-1" would
+// navigate away from the report.
+function Citations({ ids }) {
+  return ids.map((id) => (
+    <button
+      key={id}
+      type="button"
+      className="cite"
+      onClick={() => scrollToSection(`source-${id}`)}
+      aria-label={`Source ${id}`}
+    >
+      [{id}]
+    </button>
+  ));
 }
 
 function Report({ report, generatedAt }) {
@@ -35,11 +99,8 @@ function Report({ report, generatedAt }) {
     );
   }
 
-  const sections = SECTIONS.map(([key, title]) => ({
-    key,
-    title,
-    items: report[key] || [],
-  }));
+  const sections = buildSections(report);
+  const sources = report.sources || [];
   const totalFindings = sections.reduce((sum, s) => sum + s.items.length, 0);
 
   return (
@@ -67,7 +128,14 @@ function Report({ report, generatedAt }) {
               month: "short",
               year: "numeric",
             })} · `}
-          {sections.length} sections · {totalFindings} findings
+          {sections.length} sections · {totalFindings} findings ·{" "}
+          {sources.length} sources
+        </p>
+        <p className="report-note">
+          Findings are written by a language model from search-result excerpts.
+          Linked sources show what the model was given. They do not confirm that
+          a claim is true, and they do not establish customer demand, willingness
+          to pay or product-market fit.
         </p>
       </header>
 
@@ -85,6 +153,11 @@ function Report({ report, generatedAt }) {
               <span className="toc-count">{section.items.length}</span>
             </button>
           ))}
+          <button type="button" onClick={() => scrollToSection("sources")}>
+            <span className="index-num">{pad(sections.length + 1)}</span>
+            <span className="toc-label">Sources</span>
+            <span className="toc-count">{sources.length}</span>
+          </button>
         </nav>
 
         <div className="doc-body">
@@ -98,7 +171,7 @@ function Report({ report, generatedAt }) {
                 <span className="index-num">{pad(index + 1)}</span>
                 <h2>{section.title}</h2>
                 <span className="meta">
-                  {section.items.length}{" "}
+                  {BASIS_LABEL[section.basis]} · {section.items.length}{" "}
                   {section.items.length === 1 ? "item" : "items"}
                 </span>
               </header>
@@ -110,7 +183,23 @@ function Report({ report, generatedAt }) {
                       <span className="finding-num">
                         {index + 1}.{itemIndex + 1}
                       </span>
-                      <p>{item}</p>
+                      <p>
+                        {item.statement}
+                        {item.sourceIds.length > 0 && (
+                          <span className="cites">
+                            {" "}
+                            <Citations ids={item.sourceIds} />
+                          </span>
+                        )}
+                        {item.sourceIds.length === 0 &&
+                          (section.basis === "sourced" ||
+                            section.basis === "inference") && (
+                            <span className="meta cite-missing">
+                              {" "}
+                              · no source linked
+                            </span>
+                          )}
+                      </p>
                     </li>
                   ))}
                 </ol>
@@ -121,6 +210,47 @@ function Report({ report, generatedAt }) {
               )}
             </section>
           ))}
+
+          <section id="sources" className="report-section">
+            <header className="report-section-head">
+              <span className="index-num">{pad(sections.length + 1)}</span>
+              <h2>Sources</h2>
+              <span className="meta">
+                {sources.length} {sources.length === 1 ? "page" : "pages"}
+              </span>
+            </header>
+
+            {sources.length > 0 ? (
+              <ol className="findings">
+                {sources.map((source) => {
+                  const href = safeHttpUrl(source.url);
+
+                  return (
+                    <li key={source.id} id={`source-${source.id}`}>
+                      <span className="finding-num">[{source.id}]</span>
+                      <div>
+                        <p>{source.title}</p>
+                        {href ? (
+                          <a
+                            className="text-link"
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {source.domain || href}
+                          </a>
+                        ) : (
+                          <p className="muted">{source.url}</p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="muted">No web sources are linked to this report.</p>
+            )}
+          </section>
         </div>
       </div>
     </section>

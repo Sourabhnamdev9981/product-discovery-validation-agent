@@ -1,10 +1,25 @@
 # Tests the Product Discovery Agent workflow,
 # including validation, planning, and RAG evidence retrieval.
 
-from unittest import result
-from main import app
-from main import app, validate_idea, plan_research
 from unittest.mock import patch
+
+from analysis.schema import DiscoveryAnalysis
+from analysis.validation_schema import ProductValidation
+from main import app, validate_idea, plan_research
+
+EMPTY_ANALYSIS = DiscoveryAnalysis(
+    problem_findings=[],
+    user_findings=[],
+    competitor_findings=[],
+    assumptions=[],
+    opportunities=[],
+)
+
+EMPTY_VALIDATION = ProductValidation(
+    assumptions=[],
+    mvp_features=[],
+    validation_experiments=[],
+)
 
 def make_input(idea: str) -> dict:
     """Create the initial state required by the agent."""
@@ -50,10 +65,28 @@ def test_agent_retrieves_web_evidence():
         }
     ]
 
-    with patch("main.search_web") as mock_search:
+    # Search is the subject of this test. Analysis and validation are
+    # mocked so the graph can finish without calling Groq.
+    with (
+        patch("main.search_web") as mock_search,
+        patch("main.analyze_evidence", return_value=EMPTY_ANALYSIS),
+        patch("main.validate_product", return_value=EMPTY_VALIDATION),
+    ):
         mock_search.return_value = {
-            "status": "OK",
-            "data": {"organic_results": fake_evidence},
+            "code": "200",
+            "data": {
+                "webPages": {
+                    "value": [
+                        {
+                            "name": "AI Product Discovery Guide",
+                            "url": "https://example.com/product-discovery",
+                            "text": "AI can help teams research and validate product ideas.",
+                            "siteName": "Example",
+                            "displayUrl": "example.com",
+                        }
+                    ]
+                }
+            },
         }
 
         result = app.invoke(state)
@@ -64,7 +97,9 @@ def test_agent_retrieves_web_evidence():
 
     assert result["evidence"][0]["title"] == "AI Product Discovery Guide"
     assert result["evidence"][0]["url"] == "https://example.com/product-discovery"
-    assert result["evidence"][0]["research_question"]
+    assert [item["research_question"] for item in result["evidence"]] == (
+        result["research_questions"]
+    )
     assert result["evidence"][0]["evidence_status"] == "verified"
     assert result["evidence"][0]["claim"]
     assert result["evidence"][0]["source_type"] == "web_search_result"

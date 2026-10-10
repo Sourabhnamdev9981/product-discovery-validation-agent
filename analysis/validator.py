@@ -1,18 +1,9 @@
 # Converts discovery findings into structured product-validation recommendations.
 
 import json
-import os
-from pathlib import Path
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
+from analysis.groq_client import create_structured_completion
 from analysis.validation_schema import ProductValidation
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(PROJECT_ROOT / ".env")
-
-MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 
 def parse_validation(response: dict) -> ProductValidation:
@@ -25,21 +16,12 @@ def validate_product(
     product_idea: str,
 ) -> ProductValidation:
     # Generate evidence-aware validation recommendations using Groq.
+    # The analysis is itself model output capped by GROQ_MAX_COMPLETION_TOKENS,
+    # so this request stays small; compact JSON avoids indentation overhead.
 
-    api_key = os.getenv("GROQ_API_KEY")
+    analysis_text = json.dumps(analysis, ensure_ascii=False)
 
-    if not api_key:
-        raise ValueError("GROQ_API_KEY is not set in the .env file.")
-
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://api.groq.com/openai/v1",
-    )
-
-    analysis_text = json.dumps(analysis, indent=2)
-
-    response = client.chat.completions.create(
-        model=MODEL,
+    content = create_structured_completion(
         messages=[
             {
                 "role": "system",
@@ -62,19 +44,8 @@ def validate_product(
                 ),
             },
         ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "product_validation",
-                "strict": True,
-                "schema": ProductValidation.model_json_schema(),
-            },
-        },
+        schema_name="product_validation",
+        schema=ProductValidation.model_json_schema(),
     )
-
-    content = response.choices[0].message.content
-
-    if not content:
-        raise RuntimeError("Groq returned an empty response.")
 
     return parse_validation(json.loads(content))

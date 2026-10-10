@@ -53,3 +53,19 @@ def test_discover_endpoint():
     assert data["report"]["product_idea"] == (
         "An AI tool that helps founders validate product ideas"
     )
+
+
+def test_discover_reports_groq_limit_errors():
+    # Groq size/rate-limit failures become a clear 503 instead of a bare 500.
+    from unittest.mock import patch
+
+    from analysis.groq_client import GroqLimitError
+
+    with patch(
+        "api.app.invoke",
+        side_effect=GroqLimitError("Groq rate limit reached."),
+    ):
+        response = client.post("/discover", json={"product_idea": "An idea"})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Groq rate limit reached."}

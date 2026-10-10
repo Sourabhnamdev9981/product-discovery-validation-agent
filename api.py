@@ -1,9 +1,10 @@
 # Exposes the product-discovery LangGraph workflow through FastAPI.
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from analysis.groq_client import GroqLimitError
 from main import app
 
 api = FastAPI(
@@ -33,19 +34,23 @@ def health_check() -> dict:
 @api.post("/discover")
 def discover_product(request: DiscoveryRequest) -> dict:
     # Runs the discovery workflow for the submitted product idea.
-    result = app.invoke(
-        {
-            "product_idea": request.product_idea,
-            "status": "",
-            "message": "",
-            "research_questions": [],
-            "evidence": [],
-            "search_count": 0,
-            "analysis": {},
-            "validation": {},
-            "report": {},
-        }
-    )
+    try:
+        result = app.invoke(
+            {
+                "product_idea": request.product_idea,
+                "status": "",
+                "message": "",
+                "research_questions": [],
+                "evidence": [],
+                "search_count": 0,
+                "analysis": {},
+                "validation": {},
+                "report": {},
+            }
+        )
+    except GroqLimitError as error:
+        # Report Groq size/rate limits instead of a bare 500.
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
     return {
         "status": result["status"],

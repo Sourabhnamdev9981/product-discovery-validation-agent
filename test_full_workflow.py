@@ -3,31 +3,37 @@
 from unittest.mock import patch
 
 from main import app
+from analysis.schema import DiscoveryAnalysis
+from analysis.validation_schema import ProductValidation
 
 
 def test_full_workflow():
     fake_search_result = {
+        "code": "200",
         "data": {
-            "organic_results": [
-                {
-                    "title": "Product Discovery Guide",
-                    "url": "https://example.com/discovery",
-                    "snippet": (
-                        "Founders research users and competitors "
-                        "before building products."
-                    ),
-                    "source": "Example",
-                    "domain": "example.com",
-                }
-            ]
-        }
+            "webPages": {
+                "value": [
+                    {
+                        "name": "Product Discovery Guide",
+                        "url": "https://example.com/discovery",
+                        "text": (
+                            "Founders research users and competitors "
+                            "before building products."
+                        ),
+                        "siteName": "Example",
+                        "displayUrl": "example.com",
+                    }
+                ]
+            }
+        },
     }
 
     fake_analysis = {
         "problem_findings": [
             {
                 "statement": (
-                    "Founders need evidence before investing " "heavily in a product."
+                    "Founders need evidence before investing "
+                    "heavily in a product."
                 ),
                 "evidence_indexes": [0],
             }
@@ -39,56 +45,62 @@ def test_full_workflow():
             }
         ],
         "competitor_findings": [],
-        "assumptions": ["Founders will use an automated product " "discovery tool."],
+        "assumptions": [
+            "Founders will use an automated product discovery tool."
+        ],
         "opportunities": [
             {
-                "statement": "Provide evidence-backed product validation reports.",
+                "statement": (
+                    "Provide evidence-backed product validation reports."
+                ),
                 "evidence_indexes": [0],
             }
         ],
     }
 
     fake_validation = {
-        "assumptions": ["Founders will use an automated product " "discovery tool."],
-        "mvp_features": ["Evidence-backed product discovery report"],
+        "assumptions": [
+            "Founders will use an automated product discovery tool."
+        ],
+        "mvp_features": [
+            "Evidence-backed product discovery report"
+        ],
         "validation_experiments": [
             {
                 "assumption": (
-                    "Founders will use an automated product " "discovery tool."
+                    "Founders will use an automated product discovery tool."
                 ),
                 "experiment": (
-                    "Test the product with a small group of "
-                    "founders and measure report usefulness."
+                    "Test the product with a small group of founders "
+                    "and measure report usefulness."
                 ),
                 "success_signal": (
-                    "Target users report that the generated "
-                    "report helps them make product decisions."
+                    "Target users report that the generated report "
+                    "helps them make product decisions."
                 ),
                 "priority": "high",
             }
         ],
     }
 
-    with patch(
-        "main.search_web",
-        return_value=fake_search_result,
-    ), patch(
-        "main.analyze_evidence",
-        return_value=__import__(
-            "analysis.schema",
-            fromlist=["DiscoveryAnalysis"],
-        ).DiscoveryAnalysis.model_validate(fake_analysis),
-    ), patch(
-        "main.validate_product",
-        return_value=__import__(
-            "analysis.validation_schema",
-            fromlist=["ProductValidation"],
-        ).ProductValidation.model_validate(fake_validation),
+    with (
+        patch(
+            "main.search_web",
+            return_value=fake_search_result,
+        ) as mock_search,
+        patch(
+            "main.analyze_evidence",
+            return_value=DiscoveryAnalysis.model_validate(fake_analysis),
+        ),
+        patch(
+            "main.validate_product",
+            return_value=ProductValidation.model_validate(fake_validation),
+        ),
     ):
         result = app.invoke(
             {
                 "product_idea": (
-                    "An AI tool that helps founders " "validate product ideas"
+                    "An AI tool that helps founders validate product ideas"
                 ),
                 "status": "",
                 "message": "",
@@ -104,6 +116,9 @@ def test_full_workflow():
     assert result["status"] == "ready"
     assert len(result["research_questions"]) == 5
     assert len(result["evidence"]) == 5
+
+    # The workflow should search for each of its five research questions.
+    assert mock_search.call_count == 5
 
     assert result["analysis"]["problem_findings"]
     assert result["analysis"]["assumptions"]
@@ -122,3 +137,13 @@ def test_full_workflow():
     assert result["report"]["opportunities"]
     assert result["report"]["mvp_features"]
     assert result["report"]["validation_experiments"]
+
+    # The five searches return the same page, so it is listed once and every
+    # cited finding points at it.
+    report = result["report"]
+    assert [source["url"] for source in report["sources"]] == [
+        "https://example.com/discovery"
+    ]
+    assert report["cited_findings"]["key_problems"][0]["source_ids"] == [1]
+    assert report["cited_findings"]["opportunities"][0]["source_ids"] == [1]
+    assert report["cited_findings"]["competitor_findings"] == []

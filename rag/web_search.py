@@ -1,84 +1,77 @@
-# Sends product-discovery research queries to RapidAPI
-# and returns the search response as structured JSON.
+# Searches the web with LangSearch and normalizes results for the agent.
 
 import os
-import http.client
-from urllib import response
+
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-RAPIDAPI_HOST = os.getenv("RAPIDAPI_HOST", "real-time-web-search.p.rapidapi.com")
+LANGSEARCH_API_KEY = os.getenv("LANGSEARCH_API_KEY")
+LANGSEARCH_URL = "https://api.langsearch.com/v1/web-search"
 
 
 def search_web(query: str, num_results: int = 10) -> dict:
-    """Search the web using RapidAPI."""
+    """Search the web using LangSearch."""
 
-    if not RAPIDAPI_KEY:
-        raise ValueError("RAPIDAPI_KEY is not set in the .env file.")
+    if not LANGSEARCH_API_KEY:
+        raise ValueError("LANGSEARCH_API_KEY is not set in the .env file.")
 
-    conn = http.client.HTTPSConnection(RAPIDAPI_HOST)
+    if not query.strip():
+        raise ValueError("Search query cannot be empty.")
 
-    headers = {
-        "x-rapidapi-key": RAPIDAPI_KEY,
-        "x-rapidapi-host": RAPIDAPI_HOST,
-    }
-
-    path = (
-        "/search"
-        f"?q={query.replace(' ', '%20')}"
-        f"&num={num_results}"
-        "&start=0"
-        "&gl=in"
-        "&hl=en"
-        "&location=India"
-        "&device=desktop"
-        "&nfpr=0"
-        "&nhr=1"
-        "&fetch_ai_overviews=false"
-        "&return_organic_result_video_thumbnail=false"
+    response = requests.post(
+        LANGSEARCH_URL,
+        headers={
+            "Authorization": f"Bearer {LANGSEARCH_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "query": query,
+            "count": max(1, min(num_results, 50)),
+            "freshness": "noLimit",
+            "contents": {"text": {"max_characters": 3000}},
+        },
+        timeout=30,
     )
 
-    conn.request("GET", path, headers=headers)
+    if response.status_code == 429:
+        raise RuntimeError("LangSearch rate or usage limit reached.")
 
-    response = conn.getresponse()
-    data = response.read().decode("utf-8")
+    if not response.ok:
+        raise RuntimeError(f"LangSearch request failed: HTTP {response.status_code}.")
 
-    if response.status == 429:
+    result = response.json()
+
+    if str(result.get("code")) != "200":
         raise RuntimeError(
-            "RapidAPI monthly quota has been exceeded. "
-            "Web search is temporarily unavailable."
+            f"LangSearch search failed: {result.get('message', 'Unknown error')}"
         )
 
-    if response.status != 200:
-        raise RuntimeError(
-            f"RapidAPI request failed: {response.status} {data}"
-        )
-
-    import json
-
-    return json.loads(data)
-
-# Converts RapidAPI search results into a simple evidence format
-# that the product-discovery agent can use.
+    return result
 
 
 def normalize_results(result: dict) -> list[dict]:
-    """Convert raw RapidAPI results into clean evidence records."""
+    """Convert LangSearch pages into the agent's evidence format."""
 
-    organic_results = result.get("data", {}).get("organic_results", [])
-
+    pages = result.get("data", {}).get("webPages", {}).get("value", [])
     evidence = []
 
-    for item in organic_results:
+    for item in pages:
+        title = item.get("name", "")
+        url = item.get("url", "")
+        snippet = item.get("text") or item.get("snippet", "")
+
+        if not title or not url or not snippet:
+            continue
+
         evidence.append(
             {
-                "title": item.get("title", ""),
-                "url": item.get("url", ""),
-                "snippet": item.get("snippet", ""),
-                "source": item.get("source", ""),
-                "domain": item.get("domain", ""),
+                "title": title,
+                "url": url,
+                "snippet": snippet,
+                "source": item.get("siteName", ""),
+                "domain": item.get("displayUrl", ""),
             }
         )
 

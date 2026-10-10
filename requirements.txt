@@ -1,0 +1,17 @@
+# Backend runtime plus everything the default offline test suite imports.
+# Versions match the environment the tests were last run with (Python 3.11.9).
+# Requires Python >= 3.10.
+
+# API and workflow
+fastapi==0.142.2
+uvicorn==0.54.0
+langgraph==1.2.12
+pydantic==2.13.5
+python-dotenv==1.2.4
+openai==3.26.0
+requests==2.34.2
+
+# Tests and test helpers
+pytest==9.1.1
+httpx==0.28.1
+pypdf==6.19.0

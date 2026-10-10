@@ -232,14 +232,31 @@ const TECHNICAL = {
     "assumptions": ["string"],
     "opportunities": ["string"],
     "mvp_features": ["string"],
-    "validation_experiments": ["string"]
+    "validation_experiments": ["string"],
+    "sources": [{ "id": 1, "title": "string", "url": "string", "domain": "string" }],
+    "cited_findings": {
+      "key_problems": [{ "statement": "string", "source_ids": [1] }],
+      "target_users": [{ "statement": "string", "source_ids": [1] }],
+      "competitor_findings": [{ "statement": "string", "source_ids": [2] }],
+      "opportunities": [{ "statement": "string", "source_ids": [1, 2] }]
+    }
   }
 }`}</code>
           </pre>
+          <p>
+            <code>sources</code> and <code>cited_findings</code> were added
+            later and are optional for clients: the string lists keep their
+            original meaning. <code>source_ids</code> refer to the{" "}
+            <code>id</code> values in <code>sources</code>; an empty list means
+            no source is linked. Assumptions, MVP features and validation
+            experiments are never sourced.
+          </p>
           <h3>Errors</h3>
           <p>
             A non-2xx response is treated as a failure. If the body contains a
-            string <code>detail</code> field, it is shown to the user.
+            string <code>detail</code> field, it is shown to the user. A{" "}
+            <code>503</code> with a <code>detail</code> message means Groq
+            rejected the request for size or rate limits.
           </p>
         </>
       ),

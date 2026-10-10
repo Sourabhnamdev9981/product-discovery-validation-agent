@@ -1,15 +1,15 @@
 # Product Discovery & Validation Agent
 
-**From a one-line product idea to a structured discovery report — problems, users, competitors, assumptions, an MVP scope and the experiments to test it.**
+**From a one-line product idea to a structured discovery report: problems, users, competitors, assumptions, an MVP scope and the experiments to test them, with links to the web pages the findings were drawn from.**
 
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-1C3C3C)
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![Pydantic](https://img.shields.io/badge/Pydantic-v2-E92063?logo=pydantic&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 
-Most product ideas fail because nobody checked the problem, the users or the competition before building. This project automates the first pass of that homework. You describe an idea; a LangGraph workflow searches the web, filters the results, asks an LLM to analyse only that evidence under a strict JSON schema, and turns the analysis into an MVP and a validation plan. The output is a report that tells you what to test, not a verdict that the idea is good.
+Most product ideas fail because nobody checked the problem, the users or the competition before building. This project automates the first pass of that homework. You describe an idea. A LangGraph workflow searches the web with LangSearch, asks a Groq-hosted model to analyse the results under a strict JSON schema, and turns that analysis into an MVP plan and validation experiments. The report says what to test next. It does not say the idea is good.
 
 ## Table of Contents
 
@@ -17,6 +17,7 @@ Most product ideas fail because nobody checked the problem, the users or the com
 - [The Problem](#the-problem)
 - [Key Features](#key-features)
 - [How It Works](#how-it-works)
+- [Evidence Traceability](#evidence-traceability)
 - [Architecture](#architecture)
 - [Technology Stack](#technology-stack)
 - [Project Structure](#project-structure)
@@ -39,35 +40,37 @@ Most product ideas fail because nobody checked the problem, the users or the com
 The Product Discovery & Validation Agent is a full-stack application:
 
 - A **Python backend** that runs a six-node [LangGraph](https://github.com/langchain-ai/langgraph) workflow and exposes it through **FastAPI**.
-- A **React + Vite frontend** where you enter an idea and read the resulting report.
+- A **React + Vite frontend** where you enter an idea and read the report.
 
-It is aimed at students, founders and product managers who want a fast, evidence-oriented starting point before talking to users or writing code.
+It is aimed at students, founders and product managers who want an evidence-oriented starting point before talking to users or writing code.
 
 ## The Problem
 
-Early product decisions are usually made on intuition. Discovery work — understanding the problem, who has it, what already exists and which assumptions are still unproven — is slow, so it gets skipped.
+Early product decisions are usually made on intuition. Discovery work (understanding the problem, who has it, what already exists and which assumptions are still unproven) is slow, so it gets skipped.
 
 LLMs can speed this up, but a model asked "is this a good idea?" will happily invent market data. This project constrains the model instead:
 
 - The analysis step sees **only** search results collected in the same run.
 - System prompts tell the model not to claim interviews happened and not to treat online discussion as proof of demand.
-- Every LLM response must match a **strict Pydantic schema** (`extra="forbid"`), so the output is predictable and machine-checkable.
-- Assumptions are treated as unverified and paired with experiments to test them.
+- Every model response must match a **strict Pydantic schema** (`extra="forbid"`), and findings must cite evidence indexes that were actually sent to the model.
+- Assumptions are kept separate from findings and are never presented as sourced facts.
 
 ## Key Features
 
 | Feature | Where | Notes |
 | --- | --- | --- |
-| Input validation and conditional routing | `main.py` | Empty ideas stop the graph with `status: "needs_input"`. |
+| Input validation and conditional routing | `main.py` | An empty idea ends the graph with `status: "needs_input"`. |
 | Bounded research plan | `main.py` | Five research questions per idea. |
-| Live web search with a hard budget | `rag/web_search.py`, `main.py` | RapidAPI Real-Time Web Search, max **5 searches × 5 results** per run. |
-| Evidence filtering and provenance | `rag/evidence.py` | Drops incomplete results; tags the rest with source type, research question and UTC timestamp. |
-| Schema-constrained LLM analysis | `analysis/analyzer.py`, `analysis/schema.py` | Groq via the OpenAI SDK, `json_schema` response format, strict mode. |
-| MVP and validation planning | `analysis/validator.py`, `analysis/validation_schema.py` | Produces assumptions, MVP features and experiments (with success signal and priority). |
-| Typed final report | `report/builder.py`, `report/schema.py` | Assembled deterministically from earlier stages — no extra LLM call. |
-| REST API | `api.py` | `GET /health`, `POST /discover`, auto-generated docs at `/docs`. |
-| Web frontend | `frontend/` | Idea input, report view with section navigation and print-to-PDF, How It Works and documentation pages, light/dark theme. |
-| Offline test suite | `test_*.py` | Workflow and API tests run with mocked external services. |
+| Web search with a fixed budget | `rag/web_search.py`, `main.py` | LangSearch, at most **5 searches × 5 results** per run. |
+| Evidence filtering and provenance | `rag/evidence.py` | Drops results without a title, URL or snippet; tags the rest with the research question and retrieval time. |
+| Size-limited, schema-constrained analysis | `analysis/analyzer.py`, `analysis/schema.py` | At most 10 excerpts reach the model; Groq structured output with strict JSON Schema. |
+| Source-linked findings | `report/builder.py`, `report/schema.py` | Each evidence-backed finding lists the web pages it cites. |
+| MVP and validation planning | `analysis/validator.py`, `analysis/validation_schema.py` | Assumptions, MVP features, and experiments with a success signal and priority. |
+| Typed final report | `report/builder.py`, `report/schema.py` | Assembled from earlier stages without an extra LLM call. |
+| Clear provider-limit errors | `analysis/groq_client.py`, `api.py` | Groq size and rate-limit errors return HTTP 503 with a message. |
+| REST API | `api.py` | `GET /health`, `POST /discover`, generated docs at `/docs`. |
+| Web frontend | `frontend/` | Idea input, report with contents and sources, print to PDF, How It Works and documentation pages, light and dark themes. |
+| Offline test suite | `test_*.py`, `conftest.py` | Runs with no network access; live and model tests are opt-in. |
 
 ## How It Works
 
@@ -75,18 +78,54 @@ LLMs can speed this up, but a model asked "is this a good idea?" will happily in
 Product idea
   -> validate_idea       reject empty input
   -> plan_research       5 research questions
-  -> retrieve_evidence   up to 5 web searches, then evidence filtering
-  -> analyze_product     Groq LLM -> DiscoveryAnalysis
-  -> validate_product    Groq LLM -> ProductValidation
-  -> generate_report     ProductReport (7 sections)
+  -> retrieve_evidence   up to 5 LangSearch queries; keep items with title, URL and snippet
+  -> analyze_product     Groq: findings and opportunities that cite evidence indexes
+  -> validate_product    Groq: assumptions, MVP features and experiments
+  -> generate_report     ProductReport with sources and cited findings
 ```
 
-1. **Validate idea** — strips whitespace. An empty idea routes straight to `END`.
-2. **Plan research** — creates five questions covering the problem, affected users, existing alternatives, supporting evidence and unverified assumptions.
-3. **Retrieve evidence** — searches each question (5 results each) until the `MAX_SEARCHES = 5` budget is reached. Results are normalised to `title / url / snippet / source / domain`, linked to their research question, and passed through `verify_evidence`, which keeps only items with a title, URL and snippet and adds provenance fields.
-4. **Analyse** — sends the evidence to Groq and receives problem, user and competitor findings (each with `evidence_indexes` pointing back to the evidence list), plus assumptions and opportunities.
-5. **Validate** — sends the analysis and the idea to Groq again and receives assumptions, MVP features and validation experiments, each experiment with a success signal and priority.
-6. **Report** — flattens both results into a `ProductReport` with seven string lists.
+1. **Validate idea.** Strips whitespace. An empty idea routes straight to the end.
+2. **Plan research.** Creates five questions: the problem, who has it, existing alternatives, supporting evidence and unverified assumptions. Only the first question contains your idea text.
+3. **Retrieve evidence.** Searches each question for up to five results until the budget of five searches is used. Results are normalised to `title`, `url`, `snippet`, `source` and `domain`. Each record keeps the research question it came from.
+4. **Analyse.** Selects up to 10 evidence items, spread across the research questions, and trims each excerpt. Sends them to Groq and receives problem, user and competitor findings, plus opportunities. Each finding lists `evidence_indexes`, which must be indexes of items that were sent.
+5. **Validate.** Sends the analysis and idea to Groq again and receives assumptions, MVP features and validation experiments.
+6. **Report.** Builds a `ProductReport`. Findings are flattened to the same string lists as before, and the report also gets a de-duplicated `sources` list and `cited_findings`.
+
+## Evidence Traceability
+
+This section describes exactly what the report can and cannot show.
+
+**How a citation flows through the system**
+
+```text
+LangSearch result
+  -> normalize_results      keeps title, url, snippet, domain
+  -> verify_evidence        keeps items with title, url and snippet (no fact-checking)
+  -> state["evidence"]      the list every index refers to
+  -> select_evidence        picks up to 10 items; each keeps its original "index"
+  -> Groq analysis          may cite only those "index" values
+  -> parse_analysis         rejects any index that was not sent, and any finding with no index
+  -> build_report           turns indexes into de-duplicated source ids (1, 2, ...)
+  -> API response           report.sources and report.cited_findings
+  -> frontend               [n] markers link to a Sources list of http(s) URLs
+```
+
+**What is guaranteed**
+
+- Every citation in `cited_findings` points to a source in `sources`.
+- Every evidence-backed finding cites at least one evidence item that was sent to the model. Findings with no valid index are rejected, not shown without a source.
+- Indexes always refer to the original verified evidence list, even after evidence is selected for the model.
+- A web page that supports several findings appears once in `sources`.
+- The API keeps every field it returned before. `sources` and `cited_findings` were added alongside them.
+
+**What is not guaranteed**
+
+- **Citations show what the model was given, not what is true.** The system checks that a cited index exists. It does not check that the cited excerpt supports the statement. Nothing in this codebase fact-checks a claim.
+- **"verified" in the code means structurally complete.** `evidence_status: "verified"` is set when a result has a title, URL and snippet. The `claim` field is a copy of the snippet, not an extracted or checked claim.
+- **Only evidence sent to the model can be cited.** Up to 10 of the up to 25 search results reach the model. The rest stay in the workflow state but are never cited.
+- **Assumptions, MVP features and validation experiments are never sourced.** They are listed in their own sections and labelled as unverified assumptions or recommendations in the frontend.
+- **The report's Assumptions section comes from the validation stage.** The assumptions produced by the analysis stage are not copied into the report.
+- **Web search does not prove demand.** A search result that discusses a problem is not evidence that customers will pay for a solution.
 
 ## Architecture
 
@@ -106,79 +145,89 @@ flowchart LR
         REP --> E
     end
 
-    R -->|"search_web"| WS[("RapidAPI<br/>Real-Time Web Search")]
+    R -->|"search_web"| WS[("LangSearch<br/>web search API")]
     R -->|"verify_evidence"| EV["rag/evidence.py"]
-    A -->|"strict JSON schema"| LLM[("Groq API<br/>OpenAI-compatible")]
-    VP -->|"strict JSON schema"| LLM
+    A -->|"analysis/groq_client.py<br/>strict JSON schema"| LLM[("Groq API<br/>OpenAI-compatible")]
+    VP -->|"analysis/groq_client.py<br/>strict JSON schema"| LLM
     REP --> RB["report/builder.py"]
 ```
 
-All state flows through a single `AgentState` `TypedDict` (`product_idea`, `status`, `message`, `research_questions`, `evidence`, `search_count`, `analysis`, `validation`, `report`). Each node returns only the keys it changes.
+All workflow state flows through one `AgentState` `TypedDict`: `product_idea`, `status`, `message`, `research_questions`, `evidence`, `search_count`, `analysis`, `validation` and `report`. Each node returns only the keys it changes.
 
-> **Note:** `rag/embeddings.py`, `rag/ingestion.py` and `rag/vector_store.py` (Sentence Transformers, PDF ingestion and a local Chroma store) come from an earlier RAG prototype. They have their own tests but are **not called by the current workflow**.
+> **Note:** `rag/embeddings.py`, `rag/ingestion.py` and `rag/vector_store.py` (Sentence Transformers, PDF ingestion and a local Chroma store) are from an earlier RAG prototype. They have tests but are **not called by the workflow or the API**.
 
 ## Technology Stack
 
 | Technology | Role in this project |
 | --- | --- |
-| **Python 3.11** | Backend runtime (version used in development). |
+| **Python 3.10+** | Backend runtime. Tested on 3.11.9. The main dependencies checked (FastAPI, LangGraph, OpenAI SDK, requests) require 3.10 or newer. |
 | **LangGraph** | Defines the workflow as a typed state graph with a conditional edge after input validation. |
-| **FastAPI + Uvicorn** | Serves the workflow over HTTP, validates the request body, generates OpenAPI docs, and handles CORS for the dev frontend. |
-| **Pydantic v2** | Defines the strict schemas for the analysis, validation and report stages; the JSON Schema generated from each model is sent to the LLM. |
-| **OpenAI Python SDK → Groq** | Groq's OpenAI-compatible endpoint (`https://api.groq.com/openai/v1`) with structured outputs. Default model: `openai/gpt-oss-20b`. |
-| **RapidAPI Real-Time Web Search** | Live web search, called with Python's standard-library `http.client`. |
-| **python-dotenv** | Loads API keys from a local `.env` file. |
-| **React 19 + Vite 8** | Single-page frontend with hash-based routing and no UI or router libraries. |
-| **pytest + FastAPI TestClient** | Unit, workflow and API tests, with external calls mocked via `unittest.mock`. |
-| *Sentence Transformers, ChromaDB, pypdf* | Used only by the inactive RAG prototype modules. |
+| **FastAPI and Uvicorn** | Serves the workflow over HTTP, validates the request body, generates OpenAPI docs, and allows CORS from the Vite dev server. |
+| **Pydantic v2** | Defines the schemas for analysis, validation and report. The JSON Schema generated from each model is sent to Groq. |
+| **OpenAI Python SDK, pointed at Groq** | Calls Groq's OpenAI-compatible endpoint (`https://api.groq.com/openai/v1`) with structured outputs. Default model: `openai/gpt-oss-20b`. |
+| **LangSearch web search API** | Live web search, called with `requests`. Returns pages with a name, URL and text. |
+| **python-dotenv** | Loads keys and settings from a local `.env` file. |
+| **React 19 and Vite 8** | Single-page frontend with hash-based routing. It uses no router or UI library. |
+| **pytest and FastAPI TestClient** | Offline unit, workflow and API tests, with external calls mocked. |
+| *Sentence Transformers, ChromaDB, pypdf* | Sentence Transformers and ChromaDB are used only by the RAG prototype and its model tests. pypdf is needed by the ingestion test. |
 
 ## Project Structure
 
 ```text
 .
-├── api.py                     # FastAPI app: /health and /discover
-├── main.py                    # LangGraph workflow (AgentState + 6 nodes)
+├── api.py                      # FastAPI app: /health and /discover
+├── main.py                     # LangGraph workflow (AgentState + 6 nodes)
+├── conftest.py                 # Skips live/model tests by default; blocks network in offline runs
+├── pytest.ini                  # Registers the "live" and "model" markers
+├── requirements.txt            # Backend and offline-test dependencies (pinned)
+├── requirements-model.txt      # Optional: sentence-transformers and chromadb for model tests
+├── .env.example                # Placeholder configuration; copy to .env
 ├── analysis/
-│   ├── analyzer.py            # Evidence -> DiscoveryAnalysis (Groq)
-│   ├── schema.py              # DiscoveryAnalysis, Finding
-│   ├── validator.py           # Analysis -> ProductValidation (Groq)
-│   └── validation_schema.py   # ProductValidation, ValidationExperiment
+│   ├── groq_client.py          # Shared Groq call: token budget, 413/429 handling
+│   ├── analyzer.py             # Evidence selection and analysis (Groq)
+│   ├── schema.py               # DiscoveryAnalysis, Finding (with index checks)
+│   ├── validator.py            # Analysis -> ProductValidation (Groq)
+│   └── validation_schema.py    # ProductValidation, ValidationExperiment
 ├── rag/
-│   ├── web_search.py          # RapidAPI search + result normalisation
-│   ├── evidence.py            # Evidence filtering and provenance
-│   ├── embeddings.py          # (prototype, unused) Sentence Transformers
-│   ├── ingestion.py           # (prototype, unused) PDF text + chunking
-│   └── vector_store.py        # (prototype, unused) Chroma store
+│   ├── web_search.py           # LangSearch request + result normalisation
+│   ├── evidence.py             # Evidence filtering and provenance fields
+│   ├── embeddings.py           # (prototype, not in workflow) Sentence Transformers
+│   ├── ingestion.py            # (prototype, not in workflow) PDF text + chunking
+│   └── vector_store.py         # (prototype, not in workflow) Chroma store
 ├── report/
-│   ├── builder.py             # Assembles the final report
-│   └── schema.py              # ProductReport
+│   ├── builder.py              # Builds the report and resolves citations
+│   └── schema.py               # ProductReport, ReportSource, CitedFindings
 ├── data/
-│   └── sample.pdf             # Fixture for the ingestion test
-├── test_*.py                  # Test suite (see Testing)
+│   └── sample.pdf              # Input for the ingestion test
+├── test_*.py                   # Test suite (see Testing)
 └── frontend/
     ├── package.json
     ├── vite.config.js
     └── src/
         ├── main.jsx
-        ├── App.jsx            # Routing, navigation, theme, API call
-        ├── index.css          # Design system (light and dark)
-        └── pages/             # Home, Discover, Report, HowItWorks, Docs
+        ├── App.jsx             # Routing, navigation, theme, API call (API_URL)
+        ├── index.css           # Design system (light and dark)
+        └── pages/              # Home, Discover, Report, HowItWorks, Docs
 ```
 
 ## Prerequisites
 
-- **Python 3.11** (the version used in development)
-- **Node.js** with npm (developed on Node 24)
-- A **Groq API key** — [console.groq.com](https://console.groq.com)
-- A **RapidAPI key** subscribed to the *Real-Time Web Search* API — [rapidapi.com](https://rapidapi.com)
-- Windows PowerShell (the commands below use it; the project itself is cross-platform)
+| Requirement | Details |
+| --- | --- |
+| **Python 3.10 or newer** | Required by the dependencies. Development and tests used Python 3.11.9. |
+| **Node.js** | Vite 8 requires Node `^20.19.0` or `>=22.12.0` (from its `engines` field). The project was developed on Node v24.19.0. `frontend/package.json` declares no `engines` field of its own. |
+| **Groq API key** | Create one at [console.groq.com](https://console.groq.com). Used for analysis and validation. |
+| **LangSearch API key** | Create one at [langsearch.com](https://langsearch.com). Used for web search. |
+| **Windows PowerShell** | The commands below are for PowerShell. The code itself is not Windows-specific. |
+
+Both API providers have usage limits. A single discovery run can make up to five search requests and two Groq requests.
 
 ## Installation and Setup
 
-The repository does not yet include a `requirements.txt`, so backend packages are installed explicitly.
+Run these commands from the project root in PowerShell.
 
 ```powershell
-# 1. Clone
+# 1. Clone the repository
 git clone https://github.com/Sourabhnamdev9981/product-discovery-validation-agent.git
 cd product-discovery-validation-agent
 
@@ -186,16 +235,20 @@ cd product-discovery-validation-agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# 3. Install backend dependencies
-python -m pip install fastapi uvicorn langgraph pydantic python-dotenv openai pytest httpx
+# 3. Install backend dependencies (runtime and offline tests)
+python -m pip install -r requirements.txt
 
-# 4. (Optional) Dependencies for the RAG prototype modules and their tests
-python -m pip install sentence-transformers chromadb pypdf
+# 4. Optional: model-test dependencies (large download)
+# python -m pip install -r requirements-model.txt
 
 # 5. Install frontend dependencies
 cd frontend
 npm install
 cd ..
+
+# 6. Create your configuration file and add your keys
+Copy-Item .env.example .env
+notepad .env
 ```
 
 If PowerShell blocks `Activate.ps1`, allow local scripts for your user once:
@@ -204,69 +257,51 @@ If PowerShell blocks `Activate.ps1`, allow local scripts for your user once:
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
 
-<details>
-<summary>Package versions used in development</summary>
-
-| Package | Version |
-| --- | --- |
-| fastapi | 0.142.2 |
-| uvicorn | 0.54.0 |
-| langgraph | 1.2.12 |
-| pydantic | 2.13.5 |
-| openai | 3.26.0 |
-| python-dotenv | 1.2.4 |
-| pytest | 9.1.1 |
-| httpx | 0.28.1 |
-| sentence-transformers | 6.1.0 |
-| chromadb | 1.5.9 |
-| pypdf | 6.19.0 |
-
-</details>
-
 ## Environment Variables
 
-Create a `.env` file in the project root. It is already listed in `.gitignore`. There is no `.env.example` yet, so use this template:
+Settings are read from a `.env` file in the project root (loaded with `python-dotenv`) or from the environment. Real environment variables take precedence over `.env`. `.env` is git-ignored. Commit only `.env.example`.
 
-```dotenv
-# Required
-GROQ_API_KEY=your-groq-api-key
-RAPIDAPI_KEY=your-rapidapi-key
+| Variable | Required | Default in code | Used by | Purpose and valid values |
+| --- | --- | --- | --- | --- |
+| `GROQ_API_KEY` | **Yes** | none | `analysis/groq_client.py` | Authenticates the analysis and validation calls. Read when a request is made. |
+| `LANGSEARCH_API_KEY` | **Yes** | none | `rag/web_search.py` | Authenticates web search. Read when the module loads. |
+| `GROQ_MODEL` | No | `openai/gpt-oss-20b` | `analysis/groq_client.py` | Groq model ID. The model must support JSON-schema structured outputs. |
+| `GROQ_MAX_COMPLETION_TOKENS` | No | `2048` | `analysis/groq_client.py` | Output cap per Groq request, including reasoning tokens. A response cut off at this cap is reported as an error. |
+| `GROQ_REASONING_EFFORT` | No | `low` | `analysis/groq_client.py` | `low`, `medium` or `high` for gpt-oss models. Set to an empty value to omit the parameter. |
+| `ANALYSIS_MAX_EVIDENCE_ITEMS` | No | `10` | `analysis/analyzer.py` | Maximum evidence items sent to the analysis model. |
+| `ANALYSIS_MAX_EXCERPT_CHARS` | No | `500` | `analysis/analyzer.py` | Maximum characters per evidence excerpt. Longer excerpts are cut at a word boundary. |
+| `ANALYSIS_MAX_EVIDENCE_CHARS` | No | `9000` | `analysis/analyzer.py` | Maximum total characters of evidence JSON in one analysis request. |
 
-# Optional (defaults shown)
-GROQ_MODEL=openai/gpt-oss-20b
-RAPIDAPI_HOST=real-time-web-search.p.rapidapi.com
-```
+Notes:
 
-| Variable | Required | Used by | Purpose |
-| --- | --- | --- | --- |
-| `GROQ_API_KEY` | Yes | `analysis/analyzer.py`, `analysis/validator.py` | Authenticates the analysis and validation LLM calls. |
-| `RAPIDAPI_KEY` | Yes | `rag/web_search.py` | Authenticates web search requests. |
-| `GROQ_MODEL` | No | `analysis/analyzer.py`, `analysis/validator.py` | Groq model ID. Must support structured outputs. |
-| `RAPIDAPI_HOST` | No | `rag/web_search.py` | RapidAPI host for the search API. |
+- The search URL, the Groq base URL and the search size limits are fixed in code. They are not configurable.
+- The `GROQ_*` and `ANALYSIS_*` settings are read when the module is imported, so restart the backend after changing them.
+- Missing keys do not stop the server from starting. The error appears when a discovery reaches the search or analysis step. The `RUN_LIVE_TESTS` and `RUN_MODEL_TESTS` flags are for tests only and are described under [Testing](#testing).
+- The frontend API address is fixed to `http://localhost:8000` (`API_URL` in `frontend/src/App.jsx`).
 
-Missing keys don't stop the server from starting. They raise a `ValueError` the first time a discovery reaches the search or analysis step.
+The current Groq limits and their effect are described in [Limitations](#limitations-and-known-issues).
 
 ## Running the Application
 
-Run the backend and frontend in two terminals, both from the project root.
+Use two PowerShell windows, both opened in the project root.
 
-**Terminal 1 — backend**
+**Window 1: backend**
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m uvicorn api:api --reload
 ```
 
-The API listens on `http://localhost:8000`.
+The API listens on `http://localhost:8000`. `api:api` means the `api` object inside `api.py`.
 
-**Terminal 2 — frontend**
+**Window 2: frontend**
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-Open `http://localhost:5173`. The frontend expects the API at `http://localhost:8000` (`API_URL` in `frontend/src/App.jsx`), and the backend's CORS policy only allows `http://localhost:5173`. If Vite starts on a different port, free up 5173 or update the `allow_origins` list in `api.py`.
+Open `http://localhost:5173`. The backend allows CORS only from that origin (`api.py`). If Vite picks a different port, free port 5173 or update `allow_origins` in `api.py`.
 
 **Command-line run (no frontend)**
 
@@ -274,11 +309,11 @@ Open `http://localhost:5173`. The frontend expects the API at `http://localhost:
 python main.py
 ```
 
-This runs the full workflow on a built-in sample idea and prints the research questions, evidence and report. It makes real Groq and RapidAPI calls.
+This runs the workflow on a built-in example idea and prints the research questions, evidence and report. It makes real LangSearch and Groq requests.
 
 ## Using the API
 
-Interactive OpenAPI docs: **`http://localhost:8000/docs`**
+Interactive documentation is generated by FastAPI at **`http://localhost:8000/docs`** while the backend is running.
 
 ### `GET /health`
 
@@ -288,7 +323,7 @@ Interactive OpenAPI docs: **`http://localhost:8000/docs`**
 
 ### `POST /discover`
 
-Runs the full workflow synchronously. The request stays open until the report is ready.
+Runs the whole workflow in one request. The request stays open until the report is ready, which can take a while because it makes several external calls.
 
 **Request**
 
@@ -298,7 +333,7 @@ Runs the full workflow synchronously. The request stays open until the report is
 }
 ```
 
-**Response — `200 OK`**
+**Response, `200 OK`**
 
 ```json
 {
@@ -312,16 +347,33 @@ Runs the full workflow synchronously. The request stays open until the report is
     "assumptions": ["..."],
     "opportunities": ["..."],
     "mvp_features": ["..."],
-    "validation_experiments": ["..."]
+    "validation_experiments": ["..."],
+    "sources": [
+      { "id": 1, "title": "...", "url": "https://...", "domain": "..." }
+    ],
+    "cited_findings": {
+      "key_problems": [{ "statement": "...", "source_ids": [1] }],
+      "target_users": [{ "statement": "...", "source_ids": [1, 2] }],
+      "competitor_findings": [{ "statement": "...", "source_ids": [2] }],
+      "opportunities": [{ "statement": "...", "source_ids": [1] }]
+    }
   }
 }
 ```
 
-| Case | Result |
-| --- | --- |
-| Blank `product_idea` | `200` with `status: "needs_input"`, `message: "Please provide a product idea."`, `report: {}` |
-| Missing `product_idea` field | `422` FastAPI validation error |
-| Missing key, quota exceeded (`429` from RapidAPI) or LLM failure | Unhandled exception → `500 Internal Server Error` |
+The first eight report fields are the original contract and keep their meaning. `sources` and `cited_findings` are additional. `source_ids` refer to the `id` values in `sources`. An empty `source_ids` list means no source is linked to that finding.
+
+**Responses for other cases**
+
+| Case | HTTP status | Body |
+| --- | --- | --- |
+| Blank `product_idea` | `200` | `status: "needs_input"`, `message: "Please provide a product idea."`, `report: {}` |
+| Missing `product_idea` field | `422` | FastAPI validation error |
+| Groq rejects the request for size, or the rate limit is reached | `503` | `{"detail": "..."}`. For a rate limit, the message includes the retry time when Groq provides it. |
+| Groq stops a response at `GROQ_MAX_COMPLETION_TOKENS` | `500` | Generic server error (not handled separately) |
+| LangSearch returns an error, or the search key is missing | `500` | Generic server error (not handled separately) |
+
+Requests are not retried. A `413` (request too large) is not retried because the same request cannot succeed.
 
 PowerShell example:
 
@@ -331,126 +383,181 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/discover `
   -Body '{"product_idea": "An AI tool that helps students prepare for job interviews"}'
 ```
 
+### LangSearch response format
+
+If search fails, check that `rag/web_search.py` receives this shape. The application reads `data.webPages.value` and expects `code` to be `"200"`:
+
+```json
+{
+  "code": "200",
+  "data": {
+    "webPages": {
+      "value": [
+        {
+          "name": "Page title",
+          "url": "https://example.com/page",
+          "text": "Page excerpt. Falls back to 'snippet' if 'text' is missing.",
+          "siteName": "Example",
+          "displayUrl": "example.com"
+        }
+      ]
+    }
+  }
+}
+```
+
+Items without a name, URL or text are skipped.
+
 ## Example Workflow
 
-> This walkthrough shows **what the system does and the shape of the output**. It is not a recorded result. Real content depends on live search results and the LLM.
+> This walkthrough shows **what the system does and the shape of its output**. It is not a recorded result. The content depends on live search results and the model.
 
 **Input:** *"An AI tool that helps students prepare for job interviews"*
 
-1. The plan contains five questions. The first embeds the idea (*"What user problem would this product solve: An AI tool that helps students…?"*); the rest cover affected users, alternatives, supporting evidence and open assumptions.
-2. Up to five searches return up to 25 results. Results without a title, URL or snippet are dropped. The rest are tagged with their research question and retrieval time.
-3. The analysis stage returns findings such as a problem statement linked to `evidence_indexes: [0, 3]`, alongside assumptions and opportunities.
-4. The validation stage proposes MVP features and experiments in the form *assumption → experiment → success signal → priority*.
-5. The report contains seven sections:
+1. The plan has five questions. The first includes your idea. The others cover affected users, alternatives, supporting evidence and open assumptions.
+2. Up to five searches return up to 25 results. Results without a name, URL or text are dropped. The rest are tagged with their question.
+3. Up to ten of those excerpts are sent to the analysis model. It returns findings such as a problem statement that cites excerpts 0 and 3, and opportunities that cite other excerpts.
+4. The validation stage proposes assumptions, MVP features and experiments. Each experiment has an assumption, a success signal and a priority.
+5. The report is returned with seven sections. Each finding in the first four evidence-based sections shows `[n]` markers that scroll to the Sources list.
 
-| Section | Source |
-| --- | --- |
-| Key Problems | `analysis.problem_findings[].statement` |
-| Target Users | `analysis.user_findings[].statement` |
-| Competitor Findings | `analysis.competitor_findings[].statement` |
-| Assumptions | `validation.assumptions` |
-| Opportunities | `analysis.opportunities` |
-| MVP Features | `validation.mvp_features` |
-| Validation Experiments | `validation.validation_experiments[].experiment` |
+| Section | Source of the text | Linked to web sources? |
+| --- | --- | --- |
+| Key Problems | `analysis.problem_findings` | Yes |
+| Target Users | `analysis.user_findings` | Yes |
+| Competitor Findings | `analysis.competitor_findings` | Yes |
+| Opportunities | `analysis.opportunities` (inference from sources) | Yes, labelled as inference |
+| Assumptions | `validation.assumptions` | No, unverified |
+| MVP Features | `validation.mvp_features` | No, recommendation |
+| Validation Experiments | `validation.validation_experiments[].experiment` | No, recommendation |
 
 ## Testing
 
-Tests live in the project root. They fall into three groups, so you can run the suite without spending API quota.
+The default test run is offline. It makes no LangSearch, Groq or Hugging Face requests and needs no keys.
 
-**Offline — no network, no keys** (10 tests):
-
-```powershell
-python -m pytest test_analysis_schema.py test_analyzer.py test_api.py test_evidence.py test_full_workflow.py test_ingestion.py "test_main.py::test_valid_idea_creates_research_plan" "test_main.py::test_empty_idea_skips_planning" -v
-```
-
-| File | Covers |
-| --- | --- |
-| `test_full_workflow.py` | The whole graph end-to-end, with search, analysis and validation mocked |
-| `test_api.py` | `/health` and `/discover`, with the workflow mocked |
-| `test_evidence.py` | Evidence filtering and provenance fields |
-| `test_analysis_schema.py`, `test_analyzer.py` | Strict analysis schema and parsing |
-| `test_ingestion.py` | Text chunking and PDF extraction from `data/sample.pdf` |
-| `test_main.py` (2 tests) | Research planning and the empty-input route |
-
-**Local model download — RAG prototype only:**
+**Default, offline:**
 
 ```powershell
-python -m pytest test_embeddings.py test_vector_store.py -v
+python -m pytest
 ```
 
-These download the `all-MiniLM-L6-v2` model on first run. `test_vector_store.py` writes to `data/chroma/`, which is git-ignored.
+Three safeguards keep this run offline:
 
-**Live integration — consumes API quota, requires keys:**
+1. Tests marked `live` are skipped unless `RUN_LIVE_TESTS=1` is set.
+2. Tests marked `model` are skipped unless `RUN_MODEL_TESTS=1` is set.
+3. In these default runs, `conftest.py` refuses any outbound TCP connection except to loopback addresses. An accidental real request fails with a clear error instead of spending quota.
 
-| Test | External calls |
+The result is printed at the end of the run, showing passed tests and skipped tests with their reasons.
+
+**Live API tests (uses quota and needs keys in `.env`):**
+
+```powershell
+$env:RUN_LIVE_TESTS = "1"
+python -m pytest -m live -v
+Remove-Item Env:RUN_LIVE_TESTS
+```
+
+| Test | Calls |
 | --- | --- |
-| `test_web_search_live.py` | 1 RapidAPI search |
-| `test_groq_analysis.py` | 1 Groq request |
-| `test_main.py::test_agent_retrieves_web_evidence` | Search is mocked, but the graph continues to the analysis and validation nodes, which make **2 real Groq requests** |
+| `test_groq_analysis.py::test_groq_analysis` | One Groq analysis request |
+| `test_web_search_live.py::test_product_discovery_search` | One LangSearch request |
+| `test_langsearch_manual.py::test_langsearch_manual_print` | One LangSearch request; prints results with `-s` |
 
-> Running plain `pytest` collects **all** of the above, including live tests. Name files explicitly as shown when you want to stay offline.
+Each live test skips with a message if its key is not set in `.env`. The skip message names the variable but does not show its value.
 
-The frontend has lint and production-build checks:
+**Model tests (downloads a model and writes a local store):**
+
+```powershell
+python -m pip install -r requirements-model.txt
+$env:RUN_MODEL_TESTS = "1"
+python -m pytest -m model -v
+Remove-Item Env:RUN_MODEL_TESTS
+```
+
+| Test | Effect |
+| --- | --- |
+| `test_embeddings.py` | Downloads `all-MiniLM-L6-v2` on the first run |
+| `test_vector_store.py` | Writes to `data/chroma/` (git-ignored). Chunk IDs are fixed, so a second run against an existing store can fail with a duplicate-ID error. Delete `data/chroma/` to reset it. |
+
+**Frontend checks:**
 
 ```powershell
 cd frontend
 npm run lint
 npm run build
+cd ..
 ```
+
+**Mocked and unit tests** cover the parts of the workflow that matter most: the full graph with search, analysis and validation replaced by fixtures; the API with the workflow replaced by a mock; evidence filtering; schema rules for findings and evidence indexes; evidence selection and its index mapping; report citations; and Groq error handling.
 
 ## Limitations and Known Issues
 
-**Evidence quality**
+**Search results**
 
-- **"Verified" means structurally complete, not fact-checked.** `verify_evidence` keeps results that have a title, URL and snippet and labels them `evidence_status: "verified"`. It does not open pages, compare sources or check claims. The snippet itself is used as the claim.
-- **Research questions are fixed templates.** Only the first question contains the product idea. The other four are generic, so their searches are not specific to the idea.
-- **Search scope is fixed.** Queries are sent with `gl=in`, `location=India`, `hl=en`. Only spaces are URL-encoded, so ideas containing characters such as `&` or `#` may produce malformed queries.
+- **Quality and freshness depend on LangSearch.** Results are whatever the search API returns for each query. Relevance and recency are not checked.
+- **Research questions are partly generic.** Only the first of the five questions contains the product idea. The other four are fixed templates, so those searches are not tailored to the idea.
+- **Search region and freshness are fixed in code.** `count` is limited to 1 to 50, and `freshness` is set to `noLimit`.
 
-**Report output**
+**Evidence**
 
-- **Traceability is lost in the final report.** The analysis links findings to evidence (`evidence_indexes`), and experiments carry a `success_signal` and `priority`, but `ProductReport` keeps only plain strings. Source URLs are not returned by the API.
+- **"Verified" means structurally complete, not fact-checked.** Pages are not opened and claims are not compared across sources.
+- **Only 10 excerpts reach the model** by default, each cut to 500 characters. Other results are not cited.
+- **Citations are checked for existence, not meaning.** A finding can cite a real source that does not actually support it.
 
-**API behaviour**
+**Model output**
 
-- **No error handling around external services.** A missing key, a RapidAPI `429` quota error or an LLM failure surfaces as a generic HTTP `500` with no explanation. The frontend therefore cannot show the underlying cause; depending on how the browser handles the error response, it shows either a parsing error or a generic "could not reach the service" message.
-- **Synchronous, single request.** `/discover` blocks for the full run (up to 5 searches plus 2 LLM calls). There is no streaming, progress reporting, background job, caching or persistence.
-- **Quotas.** Each discovery uses up to 5 RapidAPI requests and 2 Groq requests. Free tiers run out quickly.
+- **Findings can be wrong.** The model can misread excerpts or write statements not supported by them. The strict schema checks structure, not truth.
+- **Reasoning effort is low by default.** This reduces output length and cost, but can lower quality.
+
+**Groq limits**
+
+- **Token limits are per minute.** With the default settings, one analysis request is estimated at about 6,000 tokens in the worst case (input plus the 2,048-token output cap). That estimate is based on characters, not a tokenizer. Analysis and validation run one after another, so together they can still exceed the per-minute limit. A rate-limit error is then returned as HTTP 503 with a suggested wait time when Groq provides one. Requests are not retried.
+- **Size checks are character estimates.** No tokenizer is used, so the request size is estimated from character counts.
+- **Quotas are shared.** Every discovery uses up to five LangSearch requests and two Groq requests.
+
+**Report and API**
+
+- **The API is synchronous.** `POST /discover` blocks until the whole workflow finishes. There is no streaming, progress reporting, background job, caching or saved history.
+- **Some failures return a generic 500.** LangSearch errors, Groq output cut off at the token limit, and missing keys all surface as HTTP 500 with no explanation. Only Groq size and rate-limit errors return 503.
+- **The report keeps no evidence excerpts.** Only titles, URLs and domains are returned.
+- **Analysis-stage assumptions are not in the report.** The Assumptions section comes from the validation stage.
 
 **Project setup**
 
-- **Development-only configuration.** CORS allows only `http://localhost:5173`, the frontend's API URL is hard-coded, and there is no authentication or rate limiting.
-- **Packaging.** There is no `requirements.txt`, `pyproject.toml` or `.env.example` yet.
-- **Unused RAG modules.** The embedding, ingestion and vector-store code is not part of the live workflow. The comment at the top of `main.py` still mentions a RAG knowledge base.
+- **Development-only configuration.** CORS allows only `http://localhost:5173`. The frontend API address is hard-coded. The API has no authentication or rate limiting.
+- **Unused RAG code.** The embedding, ingestion and vector-store modules are not part of the workflow.
+- **Test naming.** `test_langsearch_manual.py` is a live test, not a unit test. It duplicates `test_web_search_live.py` and could be removed.
+- **Live and model behaviour has not been proven in this document.** The offline suite is tested. Live calls and the frontend in a browser are not covered by automated tests.
 
 ## Security and Privacy
 
-- API keys are read from environment variables loaded from `.env`, which is git-ignored. Keys are never sent to the frontend.
-- Product ideas are sent to **RapidAPI** (inside search queries) and to **Groq** (with the evidence). Their data-handling policies apply; don't submit confidential ideas you are not comfortable sharing with those providers.
-- The backend does not store ideas, evidence or reports. The frontend keeps the latest report in browser memory only, and reloading the page clears it.
-- The API has no authentication. Run it locally and do not expose it publicly as-is.
+- **API keys stay on the server.** `GROQ_API_KEY` and `LANGSEARCH_API_KEY` are read from the environment or `.env`. They are not returned by the API, sent to the frontend, or printed by the tests.
+- **Keep `.env` private.** It is listed in `.gitignore`. Only `.env.example`, which holds placeholders, belongs in version control.
+- **Your idea leaves your machine.** The idea text is sent to LangSearch inside search queries, and the excerpts plus idea are sent to Groq. Read their data policies before you submit anything confidential.
+- **Nothing is stored.** The backend does not save ideas, search results or reports. The frontend keeps the latest report in memory only, so reloading the page clears it. The one exception is the optional model test, which writes to `data/chroma/`.
+- **The API has no authentication.** Run it on your own machine. Do not expose it to a network as it is.
 
 ## Roadmap
 
-Planned or suggested improvements. **None of these are implemented yet.**
+These are suggestions, not implemented features.
 
 - [ ] Generate idea-specific research questions instead of fixed templates.
-- [ ] Return evidence sources, finding-to-evidence links, success signals and priorities in the report.
-- [ ] Real evidence verification: fetch sources, check claims against page content, and cross-check across sources.
-- [ ] Map external-service failures to meaningful HTTP errors (e.g. `503` on quota exhaustion) and show them clearly in the UI.
-- [ ] Stream progress per workflow node instead of a single blocking request.
-- [ ] Add `requirements.txt` / `pyproject.toml` and `.env.example`.
-- [ ] Make search region, language and budget configurable; URL-encode queries properly.
-- [ ] Either integrate the RAG modules (e.g. for user-supplied documents) or remove them.
-- [ ] Mark live tests with pytest markers so `pytest` runs offline by default; add CI.
+- [ ] Verify citations semantically: open each source, check that the excerpt supports the finding, and record the result.
+- [ ] Return excerpts and success signals in the report, alongside the source list.
+- [ ] Include the analysis stage's own assumptions in the report, or remove them from the analysis output.
+- [ ] Map LangSearch and generic workflow failures to clear HTTP errors, as is already done for Groq limits.
+- [ ] Stream progress for each workflow node instead of one blocking request.
+- [ ] Make the frontend API address configurable with a Vite environment variable.
+- [ ] Make the Chroma test idempotent, or remove it if the RAG prototype is dropped.
+- [ ] Remove the duplicate manual LangSearch test and add CI that runs the offline suite.
 
 ## Contributing
 
 1. Fork the repository and create a branch: `git checkout -b feature/your-change`.
-2. Keep changes focused, and add or update tests for new behaviour.
-3. Run the offline tests and the frontend lint/build (see [Testing](#testing)).
+2. Keep changes focused. Add or update offline tests for new behaviour.
+3. Run `python -m pytest` and the frontend `npm run lint` and `npm run build` (see [Testing](#testing)).
 4. Open a pull request that describes what changed and why.
 
-Never commit `.env` or any API keys.
+Never commit `.env` or API keys.
 
 ## License
 
@@ -458,4 +565,4 @@ No license file has been added to this repository yet. Until one is added, all r
 
 ## Author
 
-**Sourabh Namdev** — [GitHub](https://github.com/Sourabhnamdev9981)
+**Sourabh Namdev**, [GitHub](https://github.com/Sourabhnamdev9981)
