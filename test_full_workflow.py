@@ -40,7 +40,12 @@ def test_full_workflow():
         ],
         "competitor_findings": [],
         "assumptions": ["Founders will use an automated product " "discovery tool."],
-        "opportunities": ["Provide evidence-backed product " "validation reports."],
+        "opportunities": [
+            {
+                "statement": "Provide evidence-backed product validation reports.",
+                "evidence_indexes": [0],
+            }
+        ],
     }
 
     fake_validation = {

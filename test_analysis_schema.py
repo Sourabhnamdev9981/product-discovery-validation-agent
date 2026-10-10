@@ -15,7 +15,12 @@ def test_discovery_analysis_schema():
         user_findings=[],
         competitor_findings=[],
         assumptions=["Founders are willing to use automated validation."],
-        opportunities=["Provide evidence-backed product validation."],
+        opportunities=[
+            {
+                "statement": "Provide evidence-backed product validation.",
+                "evidence_indexes": [0, 2],
+            }
+        ],
     )
 
     assert len(result.problem_findings) == 1

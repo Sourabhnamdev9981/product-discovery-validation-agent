@@ -33,7 +33,10 @@ def build_report(
         target_users=target_users,
         competitor_findings=competitor_findings,
         assumptions=validation.get("assumptions", []),
-        opportunities=analysis.get("opportunities", []),
+        opportunities=[
+            finding["statement"]
+            for finding in analysis.get("opportunities", [])
+        ],
         mvp_features=validation.get("mvp_features", []),
         validation_experiments=experiments,
     )

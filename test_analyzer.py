@@ -15,7 +15,12 @@ def test_parse_valid_analysis():
         "user_findings": [],
         "competitor_findings": [],
         "assumptions": ["Founders are willing to use automated validation."],
-        "opportunities": ["Provide evidence-backed product validation."],
+        "opportunities": [
+            {
+                "statement": "Provide evidence-backed product validation.",
+                "evidence_indexes": [0, 2],
+            }
+        ],
     }
 
     result = parse_analysis(response)
