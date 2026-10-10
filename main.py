@@ -2,12 +2,12 @@
 # validates the product idea, creates research questions,
 # and retrieves relevant evidence from the RAG knowledge base.
 
-from typing import TypedDict
-
+from analysis.analyzer import analyze_evidence
 from langgraph.graph import END, START, StateGraph
-
-from rag.embeddings import create_embeddings
-from rag.vector_store import retrieve_documents
+from analysis.validator import validate_product
+from rag.evidence import verify_evidence
+from typing import TypedDict
+from report.builder import build_report
 
 
 class AgentState(TypedDict):
@@ -17,6 +17,9 @@ class AgentState(TypedDict):
     research_questions: list[str]
     evidence: list[dict]
     search_count: int
+    analysis: dict
+    validation: dict
+    report: dict
 
 
 def validate_idea(state: AgentState) -> dict:
@@ -76,11 +79,14 @@ from rag.web_search import search_web, normalize_results
 # Searches each research question within a strict API budget
 # and combines the results into one evidence collection.
 
+# Searches all planned questions, normalizes the results,
+# and verifies the evidence before storing it in agent state.
+
 MAX_SEARCHES = 5
 
 
 def retrieve_evidence(state: AgentState) -> dict:
-    """Collect web evidence for the planned research questions."""
+    """Collect and verify web evidence within the search budget."""
 
     evidence = []
 
@@ -97,10 +103,49 @@ def retrieve_evidence(state: AgentState) -> dict:
         evidence.extend(question_evidence)
         state["search_count"] += 1
 
+    verified_evidence = verify_evidence(evidence)
+
     return {
-        "evidence": evidence,
+        "evidence": verified_evidence,
         "search_count": state["search_count"],
-        "message": "Web research completed within the search budget.",
+        "message": "Web research completed and evidence verified.",
+    }
+
+
+def analyze_product(state: AgentState) -> dict:
+    # Analyze collected evidence and return structured findings.
+    analysis = analyze_evidence(state["evidence"])
+
+    return {
+        "analysis": analysis.model_dump(),
+        "message": "Product discovery analysis completed.",
+    }
+
+
+def validate_product_node(state: AgentState) -> dict:
+    # Turn discovery findings into MVP and validation recommendations.
+    validation = validate_product(
+        state["analysis"],
+        state["product_idea"],
+    )
+
+    return {
+        "validation": validation.model_dump(),
+        "message": "Product validation completed.",
+    }
+
+
+def generate_report(state: AgentState) -> dict:
+    # Build the final report from validated workflow results.
+    report = build_report(
+        state["product_idea"],
+        state["analysis"],
+        state["validation"],
+    )
+
+    return {
+        "report": report.model_dump(),
+        "message": "Final product discovery report generated.",
     }
 
 
@@ -109,6 +154,9 @@ builder = StateGraph(AgentState)
 builder.add_node("validate_idea", validate_idea)
 builder.add_node("plan_research", plan_research)
 builder.add_node("retrieve_evidence", retrieve_evidence)
+builder.add_node("analyze_product", analyze_product)
+builder.add_node("validate_product", validate_product_node)
+builder.add_node("generate_report", generate_report)
 
 builder.add_edge(START, "validate_idea")
 
@@ -122,10 +170,12 @@ builder.add_conditional_edges(
 )
 
 builder.add_edge("plan_research", "retrieve_evidence")
-builder.add_edge("retrieve_evidence", END)
+builder.add_edge("retrieve_evidence", "analyze_product")
+builder.add_edge("analyze_product", "validate_product")
+builder.add_edge("validate_product", "generate_report")
+builder.add_edge("generate_report", END)
 
 app = builder.compile()
-
 
 if __name__ == "__main__":
     result = app.invoke(
@@ -135,6 +185,10 @@ if __name__ == "__main__":
             "message": "",
             "research_questions": [],
             "evidence": [],
+            "search_count": 0,
+            "analysis": {},
+            "validation": {},
+            "report": {},
         }
     )
 
@@ -154,3 +208,5 @@ if __name__ == "__main__":
         start=1,
     ):
         print(f"{number}. {evidence}")
+    print("\nFinal Product Discovery Report:")
+    print(result["report"])

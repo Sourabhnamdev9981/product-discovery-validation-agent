@@ -1,0 +1,119 @@
+# Tests the complete LangGraph workflow using mocked external services.
+
+from unittest.mock import patch
+
+from main import app
+
+
+def test_full_workflow():
+    fake_search_result = {
+        "data": {
+            "organic_results": [
+                {
+                    "title": "Product Discovery Guide",
+                    "url": "https://example.com/discovery",
+                    "snippet": (
+                        "Founders research users and competitors "
+                        "before building products."
+                    ),
+                    "source": "Example",
+                    "domain": "example.com",
+                }
+            ]
+        }
+    }
+
+    fake_analysis = {
+        "problem_findings": [
+            {
+                "statement": (
+                    "Founders need evidence before investing " "heavily in a product."
+                ),
+                "evidence_indexes": [0],
+            }
+        ],
+        "user_findings": [
+            {
+                "statement": "Founders are the initial target users.",
+                "evidence_indexes": [0],
+            }
+        ],
+        "competitor_findings": [],
+        "assumptions": ["Founders will use an automated product " "discovery tool."],
+        "opportunities": ["Provide evidence-backed product " "validation reports."],
+    }
+
+    fake_validation = {
+        "assumptions": ["Founders will use an automated product " "discovery tool."],
+        "mvp_features": ["Evidence-backed product discovery report"],
+        "validation_experiments": [
+            {
+                "assumption": (
+                    "Founders will use an automated product " "discovery tool."
+                ),
+                "experiment": (
+                    "Test the product with a small group of "
+                    "founders and measure report usefulness."
+                ),
+                "success_signal": (
+                    "Target users report that the generated "
+                    "report helps them make product decisions."
+                ),
+                "priority": "high",
+            }
+        ],
+    }
+
+    with patch(
+        "main.search_web",
+        return_value=fake_search_result,
+    ), patch(
+        "main.analyze_evidence",
+        return_value=__import__(
+            "analysis.schema",
+            fromlist=["DiscoveryAnalysis"],
+        ).DiscoveryAnalysis.model_validate(fake_analysis),
+    ), patch(
+        "main.validate_product",
+        return_value=__import__(
+            "analysis.validation_schema",
+            fromlist=["ProductValidation"],
+        ).ProductValidation.model_validate(fake_validation),
+    ):
+        result = app.invoke(
+            {
+                "product_idea": (
+                    "An AI tool that helps founders " "validate product ideas"
+                ),
+                "status": "",
+                "message": "",
+                "research_questions": [],
+                "evidence": [],
+                "search_count": 0,
+                "analysis": {},
+                "validation": {},
+                "report": {},
+            }
+        )
+
+    assert result["status"] == "ready"
+    assert len(result["research_questions"]) == 5
+    assert len(result["evidence"]) == 5
+
+    assert result["analysis"]["problem_findings"]
+    assert result["analysis"]["assumptions"]
+    assert result["analysis"]["opportunities"]
+
+    assert result["validation"]["assumptions"]
+    assert result["validation"]["mvp_features"]
+    assert result["validation"]["validation_experiments"]
+
+    assert result["report"]["product_idea"] == (
+        "An AI tool that helps founders validate product ideas"
+    )
+    assert result["report"]["key_problems"]
+    assert result["report"]["target_users"]
+    assert result["report"]["assumptions"]
+    assert result["report"]["opportunities"]
+    assert result["report"]["mvp_features"]
+    assert result["report"]["validation_experiments"]

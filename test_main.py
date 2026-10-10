@@ -1,6 +1,7 @@
 # Tests the Product Discovery Agent workflow,
 # including validation, planning, and RAG evidence retrieval.
 
+from unittest import result
 from main import app
 from main import app, validate_idea, plan_research
 from unittest.mock import patch
@@ -19,9 +20,12 @@ def make_input(idea: str) -> dict:
 
 
 def test_valid_idea_creates_research_plan():
-    result = app.invoke(make_input("AI product discovery assistant"))
+    state = make_input("AI product discovery assistant")
 
-    assert result["status"] == "ready"
+    validated = validate_idea(state)
+    result = plan_research(validated)
+
+    assert validated["status"] == "ready"
     assert len(result["research_questions"]) == 5
 
 
@@ -61,3 +65,7 @@ def test_agent_retrieves_web_evidence():
     assert result["evidence"][0]["title"] == "AI Product Discovery Guide"
     assert result["evidence"][0]["url"] == "https://example.com/product-discovery"
     assert result["evidence"][0]["research_question"]
+    assert result["evidence"][0]["evidence_status"] == "verified"
+    assert result["evidence"][0]["claim"]
+    assert result["evidence"][0]["source_type"] == "web_search_result"
+    assert result["evidence"][0]["retrieved_at"]

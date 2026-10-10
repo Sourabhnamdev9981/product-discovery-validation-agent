@@ -3,6 +3,7 @@
 
 import os
 import http.client
+from urllib import response
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,8 +45,16 @@ def search_web(query: str, num_results: int = 10) -> dict:
     response = conn.getresponse()
     data = response.read().decode("utf-8")
 
+    if response.status == 429:
+        raise RuntimeError(
+            "RapidAPI monthly quota has been exceeded. "
+            "Web search is temporarily unavailable."
+        )
+
     if response.status != 200:
-        raise RuntimeError(f"RapidAPI request failed: {response.status} {data}")
+        raise RuntimeError(
+            f"RapidAPI request failed: {response.status} {data}"
+        )
 
     import json
 
