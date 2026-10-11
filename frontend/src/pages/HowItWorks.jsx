@@ -12,12 +12,12 @@ const STEPS = [
     body: "The agent searches the web for information relevant to the research plan.",
   },
   {
-    title: "Evidence Verification",
-    body: "Collected sources are checked and filtered so that weak or irrelevant material does not shape the conclusions.",
+    title: "Source Linking",
+    body: "Results without a title, link or snippet are dropped, and each remaining source is linked to the findings it supports. The sources are not fact-checked.",
   },
   {
     title: "Analysis",
-    body: "The verified evidence is analysed into problems, target users, competitor findings, assumptions and opportunities.",
+    body: "The linked sources are analysed into problems, target users, competitor findings, assumptions and opportunities.",
   },
   {
     title: "Validation",

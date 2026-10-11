@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import APIStatusError, OpenAI
+from openai import APIConnectionError, APIStatusError, OpenAI
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
@@ -20,7 +20,11 @@ MAX_COMPLETION_TOKENS = int(os.getenv("GROQ_MAX_COMPLETION_TOKENS", "2048"))
 REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low")
 
 
-class GroqLimitError(RuntimeError):
+class GroqError(RuntimeError):
+    """Groq failed in a way the API reports as 503: outage, empty or cut-off output."""
+
+
+class GroqLimitError(GroqError):
     """Groq rejected a request because of its size or rate limits."""
 
 
@@ -58,8 +62,15 @@ def create_structured_completion(
             },
             **options,
         )
+    except APIConnectionError as error:
+        # Covers timeouts too. Not retried, so the caller can try again later.
+        raise GroqError("Groq could not be reached. Try again later.") from error
+
     except APIStatusError as error:
         # Retrying an identical request cannot succeed, so fail clearly.
+        if error.status_code >= 500:
+            raise GroqError("Groq is temporarily unavailable. Try again later.") from error
+
         if error.status_code == 413:
             raise GroqLimitError(
                 f"The {schema_name} request is larger than the Groq model's "
@@ -78,13 +89,14 @@ def create_structured_completion(
 
     choice = response.choices[0]
 
+    # Truncated JSON would fail to parse or pass with missing fields, so stop here.
     if choice.finish_reason == "length":
-        raise RuntimeError(
-            f"Groq stopped the {schema_name} response at the "
-            "GROQ_MAX_COMPLETION_TOKENS limit before it was complete."
+        raise GroqError(
+            f"The {schema_name} response was cut off before it was complete. "
+            "Try again."
         )
 
     if not choice.message.content:
-        raise RuntimeError("Groq returned an empty response.")
+        raise GroqError("Groq returned an empty response. Try again.")
 
     return choice.message.content

@@ -5,7 +5,7 @@
 from analysis.analyzer import analyze_evidence
 from langgraph.graph import END, START, StateGraph
 from analysis.validator import validate_product
-from rag.evidence import verify_evidence
+from rag.evidence import link_evidence
 from typing import TypedDict
 from report.builder import build_report
 
@@ -80,13 +80,13 @@ from rag.web_search import search_web, normalize_results
 # and combines the results into one evidence collection.
 
 # Searches all planned questions, normalizes the results,
-# and verifies the evidence before storing it in agent state.
+# and links each source before storing it in agent state.
 
 MAX_SEARCHES = 5
 
 
 def retrieve_evidence(state: AgentState) -> dict:
-    """Collect and verify web evidence within the search budget."""
+    """Collect web evidence within the search budget and link its sources."""
 
     evidence = []
 
@@ -103,12 +103,12 @@ def retrieve_evidence(state: AgentState) -> dict:
         evidence.extend(question_evidence)
         state["search_count"] += 1
 
-    verified_evidence = verify_evidence(evidence)
+    linked_evidence = link_evidence(evidence)
 
     return {
-        "evidence": verified_evidence,
+        "evidence": linked_evidence,
         "search_count": state["search_count"],
-        "message": "Web research completed and evidence verified.",
+        "message": "Web research completed and sources linked.",
     }
 
 

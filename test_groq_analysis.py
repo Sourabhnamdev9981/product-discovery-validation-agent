@@ -27,7 +27,7 @@ def test_groq_analysis():
             "source": "Example",
             "domain": "example.com",
             "research_question": ("What user problem would this product solve?"),
-            "evidence_status": "verified",
+            "evidence_status": "source_linked",
         },
         {
             "title": "Startup Validation Guide",
@@ -39,7 +39,7 @@ def test_groq_analysis():
             "source": "Example",
             "domain": "example.com",
             "research_question": ("What key assumptions remain unverified?"),
-            "evidence_status": "verified",
+            "evidence_status": "source_linked",
         },
     ]
 

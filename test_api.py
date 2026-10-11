@@ -69,3 +69,37 @@ def test_discover_reports_groq_limit_errors():
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Groq rate limit reached."}
+
+
+def test_discover_reports_provider_failures_as_503():
+    # Groq outages, cut-off output and LangSearch failures share one 503 path.
+    from unittest.mock import patch
+
+    from analysis.groq_client import GroqError
+    from rag.web_search import SearchError
+
+    for error in [
+        GroqError("Groq is temporarily unavailable. Try again later."),
+        SearchError("LangSearch request failed. Try again later."),
+    ]:
+        with patch("api.app.invoke", side_effect=error):
+            response = client.post("/discover", json={"product_idea": "An idea"})
+
+        assert response.status_code == 503
+        assert response.json() == {"detail": str(error)}
+
+
+def test_unexpected_errors_return_generic_500_without_detail():
+    # Unexpected failures must not expose their message (which may hold keys).
+    from unittest.mock import patch
+
+    unsafe_client = TestClient(api, raise_server_exceptions=False)
+
+    with patch(
+        "api.app.invoke",
+        side_effect=RuntimeError("GROQ_API_KEY=gsk_example leaked"),
+    ):
+        response = unsafe_client.post("/discover", json={"product_idea": "An idea"})
+
+    assert response.status_code == 500
+    assert "gsk_example" not in response.text

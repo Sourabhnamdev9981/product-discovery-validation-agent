@@ -99,7 +99,7 @@ function Typewriter() {
 const FEATURES = [
   {
     title: "Real research",
-    body: "Plans what needs to be known about your idea, then gathers and verifies evidence from the web before drawing conclusions.",
+    body: "Plans what needs to be known about your idea, then gathers evidence from the web and links each source before drawing conclusions.",
     href: "#/docs/technical",
   },
   {

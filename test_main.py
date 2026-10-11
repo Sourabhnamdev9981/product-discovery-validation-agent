@@ -100,7 +100,7 @@ def test_agent_retrieves_web_evidence():
     assert [item["research_question"] for item in result["evidence"]] == (
         result["research_questions"]
     )
-    assert result["evidence"][0]["evidence_status"] == "verified"
+    assert result["evidence"][0]["evidence_status"] == "source_linked"
     assert result["evidence"][0]["claim"]
     assert result["evidence"][0]["source_type"] == "web_search_result"
     assert result["evidence"][0]["retrieved_at"]

@@ -4,8 +4,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from analysis.groq_client import GroqLimitError
+from analysis.groq_client import GroqError
 from main import app
+from rag.web_search import SearchError
 
 api = FastAPI(
     title="Product Discovery & Validation Agent",
@@ -48,8 +49,9 @@ def discover_product(request: DiscoveryRequest) -> dict:
                 "report": {},
             }
         )
-    except GroqLimitError as error:
-        # Report Groq size/rate limits instead of a bare 500.
+    except (GroqError, SearchError) as error:
+        # Expected provider failures (limits, outages, cut-off or invalid
+        # output) return 503 with a safe message instead of a bare 500.
         raise HTTPException(status_code=503, detail=str(error)) from error
 
     return {

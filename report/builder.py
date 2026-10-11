@@ -11,7 +11,7 @@ def build_report(
 ) -> ProductReport:
     # Build the report only from data already produced by the workflow.
     #
-    # evidence is the verified evidence list the analysis indexes refer to
+    # evidence is the linked evidence list the analysis indexes refer to
     # (state["evidence"]). When it is None, citations cannot be resolved and
     # findings are returned with no linked sources.
 

@@ -11,6 +11,10 @@ LANGSEARCH_API_KEY = os.getenv("LANGSEARCH_API_KEY")
 LANGSEARCH_URL = "https://api.langsearch.com/v1/web-search"
 
 
+class SearchError(RuntimeError):
+    """LangSearch failed or could not be reached. Reported as HTTP 503."""
+
+
 def search_web(query: str, num_results: int = 10) -> dict:
     """Search the web using LangSearch."""
 
@@ -20,33 +24,38 @@ def search_web(query: str, num_results: int = 10) -> dict:
     if not query.strip():
         raise ValueError("Search query cannot be empty.")
 
-    response = requests.post(
-        LANGSEARCH_URL,
-        headers={
-            "Authorization": f"Bearer {LANGSEARCH_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "query": query,
-            "count": max(1, min(num_results, 50)),
-            "freshness": "noLimit",
-            "contents": {"text": {"max_characters": 3000}},
-        },
-        timeout=30,
-    )
+    try:
+        response = requests.post(
+            LANGSEARCH_URL,
+            headers={
+                "Authorization": f"Bearer {LANGSEARCH_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "query": query,
+                "count": max(1, min(num_results, 50)),
+                "freshness": "noLimit",
+                "contents": {"text": {"max_characters": 3000}},
+            },
+            timeout=30,
+        )
+    except requests.RequestException as error:
+        raise SearchError("LangSearch could not be reached. Try again later.") from error
 
     if response.status_code == 429:
-        raise RuntimeError("LangSearch rate or usage limit reached.")
+        raise SearchError("LangSearch rate or usage limit reached. Try again later.")
 
     if not response.ok:
-        raise RuntimeError(f"LangSearch request failed: HTTP {response.status_code}.")
+        raise SearchError("LangSearch request failed. Try again later.")
 
-    result = response.json()
+    try:
+        result = response.json()
+    except ValueError as error:
+        raise SearchError("LangSearch returned an unreadable response.") from error
 
+    # The provider's own message is not passed on; it may contain internal detail.
     if str(result.get("code")) != "200":
-        raise RuntimeError(
-            f"LangSearch search failed: {result.get('message', 'Unknown error')}"
-        )
+        raise SearchError("LangSearch could not complete the search. Try again later.")
 
     return result
 

@@ -6,7 +6,9 @@ import os
 from collections.abc import Iterable
 from itertools import zip_longest
 
-from analysis.groq_client import create_structured_completion
+from pydantic import ValidationError
+
+from analysis.groq_client import GroqError, create_structured_completion
 from analysis.schema import DiscoveryAnalysis
 
 # Evidence budget for the analysis request. Groq's on-demand tier allows
@@ -145,7 +147,13 @@ def analyze_evidence(evidence: list[dict]) -> DiscoveryAnalysis:
         schema=DiscoveryAnalysis.model_json_schema(),
     )
 
-    return parse_analysis(
-        json.loads(content),
-        valid_indexes=[record["index"] for record in selected],
-    )
+    try:
+        return parse_analysis(
+            json.loads(content),
+            valid_indexes=[record["index"] for record in selected],
+        )
+    except (json.JSONDecodeError, ValidationError) as error:
+        # The model's output is invalid, so no analysis is returned.
+        raise GroqError(
+            "Groq's analysis did not match the expected format. Try again."
+        ) from error

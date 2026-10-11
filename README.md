@@ -67,7 +67,7 @@ LLMs can speed this up, but a model asked "is this a good idea?" will happily in
 | Source-linked findings | `report/builder.py`, `report/schema.py` | Each evidence-backed finding lists the web pages it cites. |
 | MVP and validation planning | `analysis/validator.py`, `analysis/validation_schema.py` | Assumptions, MVP features, and experiments with a success signal and priority. |
 | Typed final report | `report/builder.py`, `report/schema.py` | Assembled from earlier stages without an extra LLM call. |
-| Clear provider-limit errors | `analysis/groq_client.py`, `api.py` | Groq size and rate-limit errors return HTTP 503 with a message. |
+| Clear provider errors | `analysis/groq_client.py`, `rag/web_search.py`, `api.py` | Groq and LangSearch limits, outages and incomplete output return HTTP 503 with a safe message. |
 | REST API | `api.py` | `GET /health`, `POST /discover`, generated docs at `/docs`. |
 | Web frontend | `frontend/` | Idea input, report with contents and sources, print to PDF, How It Works and documentation pages, light and dark themes. |
 | Offline test suite | `test_*.py`, `conftest.py` | Runs with no network access; live and model tests are opt-in. |
@@ -100,7 +100,7 @@ This section describes exactly what the report can and cannot show.
 ```text
 LangSearch result
   -> normalize_results      keeps title, url, snippet, domain
-  -> verify_evidence        keeps items with title, url and snippet (no fact-checking)
+  -> link_evidence          keeps items with title, url and snippet (no fact-checking)
   -> state["evidence"]      the list every index refers to
   -> select_evidence        picks up to 10 items; each keeps its original "index"
   -> Groq analysis          may cite only those "index" values
@@ -114,14 +114,14 @@ LangSearch result
 
 - Every citation in `cited_findings` points to a source in `sources`.
 - Every evidence-backed finding cites at least one evidence item that was sent to the model. Findings with no valid index are rejected, not shown without a source.
-- Indexes always refer to the original verified evidence list, even after evidence is selected for the model.
+- Indexes always refer to the original linked evidence list, even after evidence is selected for the model.
 - A web page that supports several findings appears once in `sources`.
 - The API keeps every field it returned before. `sources` and `cited_findings` were added alongside them.
 
 **What is not guaranteed**
 
 - **Citations show what the model was given, not what is true.** The system checks that a cited index exists. It does not check that the cited excerpt supports the statement. Nothing in this codebase fact-checks a claim.
-- **"verified" in the code means structurally complete.** `evidence_status: "verified"` is set when a result has a title, URL and snippet. The `claim` field is a copy of the snippet, not an extracted or checked claim.
+- **"source_linked" in the code means citable.** `evidence_status: "source_linked"` is set when a result has a title, URL and snippet. The `claim` field is a copy of the snippet, not an extracted or checked claim.
 - **Only evidence sent to the model can be cited.** Up to 10 of the up to 25 search results reach the model. The rest stay in the workflow state but are never cited.
 - **Assumptions, MVP features and validation experiments are never sourced.** They are listed in their own sections and labelled as unverified assumptions or recommendations in the frontend.
 - **The report's Assumptions section comes from the validation stage.** The assumptions produced by the analysis stage are not copied into the report.
@@ -146,7 +146,7 @@ flowchart LR
     end
 
     R -->|"search_web"| WS[("LangSearch<br/>web search API")]
-    R -->|"verify_evidence"| EV["rag/evidence.py"]
+    R -->|"link_evidence"| EV["rag/evidence.py"]
     A -->|"analysis/groq_client.py<br/>strict JSON schema"| LLM[("Groq API<br/>OpenAI-compatible")]
     VP -->|"analysis/groq_client.py<br/>strict JSON schema"| LLM
     REP --> RB["report/builder.py"]
@@ -183,7 +183,7 @@ All workflow state flows through one `AgentState` `TypedDict`: `product_idea`, `
 ├── requirements-model.txt      # Optional: sentence-transformers and chromadb for model tests
 ├── .env.example                # Placeholder configuration; copy to .env
 ├── analysis/
-│   ├── groq_client.py          # Shared Groq call: token budget, 413/429 handling
+│   ├── groq_client.py          # Shared Groq call: token budget, 413/429/5xx handling
 │   ├── analyzer.py             # Evidence selection and analysis (Groq)
 │   ├── schema.py               # DiscoveryAnalysis, Finding (with index checks)
 │   ├── validator.py            # Analysis -> ProductValidation (Groq)
@@ -370,8 +370,10 @@ The first eight report fields are the original contract and keep their meaning. 
 | Blank `product_idea` | `200` | `status: "needs_input"`, `message: "Please provide a product idea."`, `report: {}` |
 | Missing `product_idea` field | `422` | FastAPI validation error |
 | Groq rejects the request for size, or the rate limit is reached | `503` | `{"detail": "..."}`. For a rate limit, the message includes the retry time when Groq provides it. |
-| Groq stops a response at `GROQ_MAX_COMPLETION_TOKENS` | `500` | Generic server error (not handled separately) |
-| LangSearch returns an error, or the search key is missing | `500` | Generic server error (not handled separately) |
+| Groq is unavailable, cannot be reached, or returns empty or cut-off output | `503` | `{"detail": "..."}` |
+| Groq returns analysis or validation JSON that does not match the schema | `503` | `{"detail": "..."}` |
+| LangSearch rate-limits, fails, cannot be reached, or returns an unreadable response | `503` | `{"detail": "..."}` |
+| Missing API key, or any other unexpected error | `500` | Generic server error. The message is not returned. |
 
 Requests are not retried. A `413` (request too large) is not retried because the same request cannot succeed.
 
@@ -499,7 +501,7 @@ cd ..
 
 **Evidence**
 
-- **"Verified" means structurally complete, not fact-checked.** Pages are not opened and claims are not compared across sources.
+- **"Source linked" means citable, not fact-checked.** Pages are not opened and claims are not compared across sources.
 - **Only 10 excerpts reach the model** by default, each cut to 500 characters. Other results are not cited.
 - **Citations are checked for existence, not meaning.** A finding can cite a real source that does not actually support it.
 
@@ -517,7 +519,7 @@ cd ..
 **Report and API**
 
 - **The API is synchronous.** `POST /discover` blocks until the whole workflow finishes. There is no streaming, progress reporting, background job, caching or saved history.
-- **Some failures return a generic 500.** LangSearch errors, Groq output cut off at the token limit, and missing keys all surface as HTTP 500 with no explanation. Only Groq size and rate-limit errors return 503.
+- **Missing keys return a generic 500.** Provider failures return 503 with a message. Other unexpected errors return a generic 500 and do not show their message.
 - **The report keeps no evidence excerpts.** Only titles, URLs and domains are returned.
 - **Analysis-stage assumptions are not in the report.** The Assumptions section comes from the validation stage.
 
@@ -544,7 +546,6 @@ These are suggestions, not implemented features.
 - [ ] Verify citations semantically: open each source, check that the excerpt supports the finding, and record the result.
 - [ ] Return excerpts and success signals in the report, alongside the source list.
 - [ ] Include the analysis stage's own assumptions in the report, or remove them from the analysis output.
-- [ ] Map LangSearch and generic workflow failures to clear HTTP errors, as is already done for Groq limits.
 - [ ] Stream progress for each workflow node instead of one blocking request.
 - [ ] Make the frontend API address configurable with a Vite environment variable.
 - [ ] Make the Chroma test idempotent, or remove it if the RAG prototype is dropped.

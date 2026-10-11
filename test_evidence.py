@@ -1,6 +1,6 @@
-from rag.evidence import verify_evidence
+from rag.evidence import link_evidence
 
-def test_verify_evidence():
+def test_link_evidence():
     evidence = [
         {
             "title": "Product Discovery Guide",
@@ -14,11 +14,11 @@ def test_verify_evidence():
         },
     ]
 
-    verified = verify_evidence(evidence)
+    linked = link_evidence(evidence)
 
-    assert len(verified) == 1
-    assert verified[0]["title"] == "Product Discovery Guide"
-    assert verified[0]["claim"] == verified[0]["snippet"]
-    assert verified[0]["evidence_status"] == "verified"
-    assert verified[0]["source_type"] == "web_search_result"
-    assert verified[0]["retrieved_at"]
+    assert len(linked) == 1
+    assert linked[0]["title"] == "Product Discovery Guide"
+    assert linked[0]["claim"] == linked[0]["snippet"]
+    assert linked[0]["evidence_status"] == "source_linked"
+    assert linked[0]["source_type"] == "web_search_result"
+    assert linked[0]["retrieved_at"]

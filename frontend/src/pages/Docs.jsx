@@ -193,7 +193,7 @@ const TECHNICAL = {
             <li>Product Idea</li>
             <li>Research Planning</li>
             <li>Web Research</li>
-            <li>Evidence Verification</li>
+            <li>Source Linking</li>
             <li>Analysis</li>
             <li>Validation</li>
             <li>Final Report</li>
@@ -255,8 +255,10 @@ const TECHNICAL = {
           <p>
             A non-2xx response is treated as a failure. If the body contains a
             string <code>detail</code> field, it is shown to the user. A{" "}
-            <code>503</code> with a <code>detail</code> message means Groq
-            rejected the request for size or rate limits.
+            <code>503</code> with a <code>detail</code> message means a
+            provider could not complete the request: Groq or LangSearch hit a
+            size or rate limit, is unavailable, or returned incomplete output.
+            Retry later. Other failures show a generic error.
           </p>
         </>
       ),

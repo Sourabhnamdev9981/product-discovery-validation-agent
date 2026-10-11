@@ -1,13 +1,13 @@
-# Converts verified search results into traceable evidence records
-# with explicit claims and provenance.
+# Keeps search results that have the fields needed to cite them, and attaches
+# source metadata. It does not check that a source supports any claim.
 
 from datetime import datetime, timezone
 
 
-def verify_evidence(evidence: list[dict]) -> list[dict]:
-    """Keep usable evidence and attach provenance metadata."""
+def link_evidence(evidence: list[dict]) -> list[dict]:
+    """Keep citable evidence and attach source metadata."""
 
-    verified = []
+    linked = []
 
     for item in evidence:
         title = item.get("title", "").strip()
@@ -17,14 +17,15 @@ def verify_evidence(evidence: list[dict]) -> list[dict]:
         if not title or not url or not snippet:
             continue
 
-        verified.append(
+        linked.append(
             {
                 **item,
+                # Copy of the snippet, not an extracted or checked claim.
                 "claim": snippet,
-                "evidence_status": "verified",
+                "evidence_status": "source_linked",
                 "source_type": "web_search_result",
                 "retrieved_at": datetime.now(timezone.utc).isoformat(),
             }
         )
 
-    return verified
+    return linked

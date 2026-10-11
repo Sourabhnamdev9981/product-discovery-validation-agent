@@ -7,11 +7,16 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-from openai import APIStatusError
+from openai import APIConnectionError, APIStatusError
 
 from analysis import analyzer, groq_client
 from analysis.analyzer import analyze_evidence, select_evidence
-from analysis.groq_client import GroqLimitError, create_structured_completion
+from analysis.groq_client import (
+    GroqError,
+    GroqLimitError,
+    create_structured_completion,
+)
+from analysis.validator import validate_product
 
 QUESTIONS = [f"Research question {number}?" for number in range(5)]
 
@@ -30,7 +35,7 @@ def make_evidence(per_question: int = 5, text_chars: int = 3000) -> list[dict]:
             "source": "Example",
             "domain": "example.com",
             "research_question": QUESTIONS[question],
-            "evidence_status": "verified",
+            "evidence_status": "source_linked",
             "source_type": "web_search_result",
             "retrieved_at": "2026-10-10T00:00:00+00:00",
         }
@@ -129,7 +134,7 @@ def test_analyze_evidence_rejects_index_not_sent_to_model():
     with patch.object(
         analyzer, "create_structured_completion", return_value=model_reply(reply)
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises(GroqError):
             analyze_evidence(evidence)
 
 
@@ -139,7 +144,7 @@ def groq_error(status_code: int, headers: dict | None = None) -> APIStatusError:
     return APIStatusError("Groq error", response=response, body=None)
 
 
-def run_with_client_error(error: APIStatusError) -> tuple[MagicMock, GroqLimitError]:
+def run_with_client_error(error: Exception) -> tuple[MagicMock, GroqError]:
     client = MagicMock()
     client.chat.completions.create.side_effect = error
 
@@ -147,7 +152,7 @@ def run_with_client_error(error: APIStatusError) -> tuple[MagicMock, GroqLimitEr
         patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}),
         patch.object(groq_client, "OpenAI", return_value=client),
     ):
-        with pytest.raises(GroqLimitError) as raised:
+        with pytest.raises(GroqError) as raised:
             create_structured_completion([], "discovery_analysis", {})
 
     return client, raised.value
@@ -184,17 +189,81 @@ def test_request_sets_completion_budget():
     assert kwargs["response_format"]["json_schema"]["strict"] is True
 
 
-def test_truncated_completion_is_reported():
+def run_with_choice(finish_reason: str, content: str | None) -> GroqError:
     client = MagicMock()
-    choice = MagicMock(finish_reason="length")
+    choice = MagicMock(finish_reason=finish_reason)
+    choice.message.content = content
     client.chat.completions.create.return_value.choices = [choice]
 
     with (
         patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}),
         patch.object(groq_client, "OpenAI", return_value=client),
     ):
-        with pytest.raises(RuntimeError, match="GROQ_MAX_COMPLETION_TOKENS"):
+        with pytest.raises(GroqError) as raised:
             create_structured_completion([], "discovery_analysis", {})
+
+    return raised.value
+
+
+def test_truncated_completion_is_reported():
+    error = run_with_choice("length", '{"problem_findings": [')
+
+    assert "cut off before it was complete" in str(error)
+
+
+def test_empty_completion_is_reported():
+    error = run_with_choice("stop", None)
+
+    assert "empty response" in str(error)
+
+
+def test_groq_server_error_is_reported_as_unavailable():
+    client, error = run_with_client_error(groq_error(503))
+
+    assert isinstance(error, GroqError)
+    assert "temporarily unavailable" in str(error)
+    assert client.chat.completions.create.call_count == 1
+
+
+def test_groq_connection_error_is_reported_as_unavailable():
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    client, error = run_with_client_error(
+        APIConnectionError(request=request)
+    )
+
+    assert isinstance(error, GroqError)
+    assert "could not be reached" in str(error)
+
+
+def test_groq_auth_error_is_not_reported_as_unavailable():
+    # A bad key is server configuration, not an outage, so it stays an
+    # unhandled error (HTTP 500) instead of a 503.
+    client = MagicMock()
+    client.chat.completions.create.side_effect = groq_error(401)
+
+    with (
+        patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}),
+        patch.object(groq_client, "OpenAI", return_value=client),
+    ):
+        with pytest.raises(APIStatusError):
+            create_structured_completion([], "discovery_analysis", {})
+
+
+def test_malformed_analysis_json_is_reported():
+    with patch.object(
+        analyzer, "create_structured_completion", return_value='{"problem_findings": ['
+    ):
+        with pytest.raises(GroqError, match="did not match the expected format"):
+            analyze_evidence(make_evidence())
+
+
+def test_malformed_validation_is_reported():
+    with patch(
+        "analysis.validator.create_structured_completion",
+        return_value=model_reply({"mvp_features": "not a list"}),
+    ):
+        with pytest.raises(GroqError, match="did not match the expected format"):
+            validate_product({}, "An idea")
 
 
 def test_selected_indexes_resolve_to_the_same_sources_in_the_report():

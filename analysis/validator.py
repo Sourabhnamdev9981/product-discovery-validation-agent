@@ -2,7 +2,9 @@
 
 import json
 
-from analysis.groq_client import create_structured_completion
+from pydantic import ValidationError
+
+from analysis.groq_client import GroqError, create_structured_completion
 from analysis.validation_schema import ProductValidation
 
 
@@ -48,4 +50,9 @@ def validate_product(
         schema=ProductValidation.model_json_schema(),
     )
 
-    return parse_validation(json.loads(content))
+    try:
+        return parse_validation(json.loads(content))
+    except (json.JSONDecodeError, ValidationError) as error:
+        raise GroqError(
+            "Groq's validation did not match the expected format. Try again."
+        ) from error
