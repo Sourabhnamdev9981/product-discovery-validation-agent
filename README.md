@@ -70,7 +70,7 @@ LLMs can speed this up, but a model asked "is this a good idea?" will happily in
 | Clear provider errors | `analysis/groq_client.py`, `rag/web_search.py`, `api.py` | Groq and LangSearch limits, outages and incomplete output return HTTP 503 with a safe message. |
 | REST API | `api.py` | `GET /health`, `POST /discover`, generated docs at `/docs`. |
 | Web frontend | `frontend/` | Idea input, report with contents and sources, print to PDF, How It Works and documentation pages, light and dark themes. |
-| Offline test suite | `test_*.py`, `conftest.py` | Runs with no network access; live and model tests are opt-in. |
+| Offline test suite | `tests/test_*.py`, `tests/conftest.py` | Runs with no network access; live and model tests are opt-in. |
 
 ## How It Works
 
@@ -177,7 +177,7 @@ All workflow state flows through one `AgentState` `TypedDict`: `product_idea`, `
 .
 ├── api.py                      # FastAPI app: /health and /discover
 ├── main.py                     # LangGraph workflow (AgentState + 6 nodes)
-├── conftest.py                 # Skips live/model tests by default; blocks network in offline runs
+├── tests/conftest.py           # Skips live/model tests by default; blocks network in offline runs
 ├── pytest.ini                  # Registers the "live" and "model" markers
 ├── requirements.txt            # Backend and offline-test dependencies (pinned)
 ├── requirements-model.txt      # Optional: sentence-transformers and chromadb for model tests
@@ -446,7 +446,7 @@ Three safeguards keep this run offline:
 
 1. Tests marked `live` are skipped unless `RUN_LIVE_TESTS=1` is set.
 2. Tests marked `model` are skipped unless `RUN_MODEL_TESTS=1` is set.
-3. In these default runs, `conftest.py` refuses any outbound TCP connection except to loopback addresses. An accidental real request fails with a clear error instead of spending quota.
+3. In these default runs, `tests/conftest.py` refuses any outbound TCP connection except to loopback addresses. An accidental real request fails with a clear error instead of spending quota.
 
 The result is printed at the end of the run, showing passed tests and skipped tests with their reasons.
 
@@ -460,9 +460,9 @@ Remove-Item Env:RUN_LIVE_TESTS
 
 | Test | Calls |
 | --- | --- |
-| `test_groq_analysis.py::test_groq_analysis` | One Groq analysis request |
-| `test_web_search_live.py::test_product_discovery_search` | One LangSearch request |
-| `test_langsearch_manual.py::test_langsearch_manual_print` | One LangSearch request; prints results with `-s` |
+| `tests/test_groq_analysis.py::test_groq_analysis` | One Groq analysis request |
+| `tests/test_web_search_live.py::test_product_discovery_search` | One LangSearch request |
+| `tests/test_langsearch_manual.py::test_langsearch_manual_print` | One LangSearch request; prints results with `-s` |
 
 Each live test skips with a message if its key is not set in `.env`. The skip message names the variable but does not show its value.
 
@@ -477,8 +477,8 @@ Remove-Item Env:RUN_MODEL_TESTS
 
 | Test | Effect |
 | --- | --- |
-| `test_embeddings.py` | Downloads `all-MiniLM-L6-v2` on the first run |
-| `test_vector_store.py` | Writes to `data/chroma/` (git-ignored). Chunk IDs are fixed, so a second run against an existing store can fail with a duplicate-ID error. Delete `data/chroma/` to reset it. |
+| `tests/test_embeddings.py` | Downloads `all-MiniLM-L6-v2` on the first run |
+| `tests/test_vector_store.py` | Writes to `data/chroma/` (git-ignored). Chunk IDs are fixed, so a second run against an existing store can fail with a duplicate-ID error. Delete `data/chroma/` to reset it. |
 
 **Frontend checks:**
 
