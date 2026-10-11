@@ -18,7 +18,10 @@ app = FastAPI(
 # Add your deployed Vercel frontend URL before production use.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://product-discovery-validation-agent.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
