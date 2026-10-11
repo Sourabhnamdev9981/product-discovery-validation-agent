@@ -1,19 +1,22 @@
-# Exposes the product-discovery LangGraph workflow through FastAPI.
+# Exposes the Product Discovery & Validation Agent through FastAPI.
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from analysis.groq_client import GroqError
-from main import app
+from main import graph
 from rag.web_search import SearchError
 
-api = FastAPI(
+app = FastAPI(
     title="Product Discovery & Validation Agent",
     version="1.0.0",
 )
 
-api.add_middleware(
+
+# CORS: allows the local Vite frontend during development.
+# Add your deployed Vercel frontend URL before production use.
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
     allow_credentials=True,
@@ -21,22 +24,26 @@ api.add_middleware(
     allow_headers=["*"],
 )
 
+
 class DiscoveryRequest(BaseModel):
-    # Defines the input accepted by the discovery endpoint.
+    """Defines the input accepted by the discovery endpoint."""
+
     product_idea: str
 
 
-@api.get("/health")
+@app.get("/health")
 def health_check() -> dict:
-    # Confirms that the API is running.
+    """Confirms that the API is running."""
+
     return {"status": "ok"}
 
 
-@api.post("/discover")
+@app.post("/discover")
 def discover_product(request: DiscoveryRequest) -> dict:
-    # Runs the discovery workflow for the submitted product idea.
+    """Runs the discovery workflow for the submitted product idea."""
+
     try:
-        result = app.invoke(
+        result = graph.invoke(
             {
                 "product_idea": request.product_idea,
                 "status": "",
@@ -50,9 +57,11 @@ def discover_product(request: DiscoveryRequest) -> dict:
             }
         )
     except (GroqError, SearchError) as error:
-        # Expected provider failures (limits, outages, cut-off or invalid
-        # output) return 503 with a safe message instead of a bare 500.
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        # Return a safe response for expected provider failures.
+        raise HTTPException(
+            status_code=503,
+            detail=str(error),
+        ) from error
 
     return {
         "status": result["status"],
