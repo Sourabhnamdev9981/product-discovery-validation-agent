@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from main import app
+from main import graph
 from analysis.schema import DiscoveryAnalysis
 from analysis.validation_schema import ProductValidation
 
@@ -97,7 +97,7 @@ def test_full_workflow():
             return_value=ProductValidation.model_validate(fake_validation),
         ),
     ):
-        result = app.invoke(
+        result = graph.invoke(
             {
                 "product_idea": (
                     "An AI tool that helps founders validate product ideas"

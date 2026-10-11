@@ -2,9 +2,9 @@
 
 from fastapi.testclient import TestClient
 
-from api import api
+from api import app
 
-client = TestClient(api)
+client = TestClient(app)
 
 
 def test_health_check():
@@ -34,7 +34,7 @@ def test_discover_endpoint():
 
     from unittest.mock import patch
 
-    with patch("api.app.invoke", return_value=fake_result):
+    with patch("api.graph.invoke", return_value=fake_result):
         response = client.post(
             "/discover",
             json={
@@ -62,7 +62,7 @@ def test_discover_reports_groq_limit_errors():
     from analysis.groq_client import GroqLimitError
 
     with patch(
-        "api.app.invoke",
+        "api.graph.invoke",
         side_effect=GroqLimitError("Groq rate limit reached."),
     ):
         response = client.post("/discover", json={"product_idea": "An idea"})
@@ -82,7 +82,7 @@ def test_discover_reports_provider_failures_as_503():
         GroqError("Groq is temporarily unavailable. Try again later."),
         SearchError("LangSearch request failed. Try again later."),
     ]:
-        with patch("api.app.invoke", side_effect=error):
+        with patch("api.graph.invoke", side_effect=error):
             response = client.post("/discover", json={"product_idea": "An idea"})
 
         assert response.status_code == 503
@@ -93,10 +93,10 @@ def test_unexpected_errors_return_generic_500_without_detail():
     # Unexpected failures must not expose their message (which may hold keys).
     from unittest.mock import patch
 
-    unsafe_client = TestClient(api, raise_server_exceptions=False)
+    unsafe_client = TestClient(app, raise_server_exceptions=False)
 
     with patch(
-        "api.app.invoke",
+        "api.graph.invoke",
         side_effect=RuntimeError("GROQ_API_KEY=gsk_example leaked"),
     ):
         response = unsafe_client.post("/discover", json={"product_idea": "An idea"})

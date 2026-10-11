@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from analysis.schema import DiscoveryAnalysis
 from analysis.validation_schema import ProductValidation
-from main import app, validate_idea, plan_research
+from main import graph, validate_idea, plan_research
 
 EMPTY_ANALYSIS = DiscoveryAnalysis(
     problem_findings=[],
@@ -45,7 +45,7 @@ def test_valid_idea_creates_research_plan():
 
 
 def test_empty_idea_skips_planning():
-    result = app.invoke(make_input("   "))
+    result = graph.invoke(make_input("   "))
 
     assert result["status"] == "needs_input"
     assert result["research_questions"] == []
@@ -89,7 +89,7 @@ def test_agent_retrieves_web_evidence():
             },
         }
 
-        result = app.invoke(state)
+        result = graph.invoke(state)
 
     assert len(result["evidence"]) == 5
     assert result["search_count"] == 5
