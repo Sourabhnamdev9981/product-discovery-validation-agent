@@ -5,7 +5,9 @@ import Report from "./pages/Report.jsx";
 import HowItWorks from "./pages/HowItWorks.jsx";
 import Docs from "./pages/Docs.jsx";
 
-const API_URL = "http://localhost:8000";
+const API_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:8000";
 
 const NAV = [
   ["/", "Home"],
