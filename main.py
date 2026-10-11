@@ -176,10 +176,10 @@ builder.add_edge("analyze_product", "validate_product")
 builder.add_edge("validate_product", "generate_report")
 builder.add_edge("generate_report", END)
 
-app = builder.compile()
+graph = builder.compile()
 
 if __name__ == "__main__":
-    result = app.invoke(
+    result = graph.invoke(
         {
             "product_idea": "An AI tool that helps founders validate product ideas",
             "status": "",
